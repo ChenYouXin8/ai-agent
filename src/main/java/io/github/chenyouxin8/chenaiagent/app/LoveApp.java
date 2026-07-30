@@ -48,6 +48,26 @@ public class LoveApp {
 
         return content;
     }
+    // 定义数据结构（Java Record）
+    record LoveReport(String title, List<String> suggestions) {
+    }
+
+    /**
+     * AI 恋爱报告功能（实战结构化输出）
+     * @param message 用户输入
+     * @param chatId  对话ID
+     * @return AI 的回复
+     */
+    public LoveReport doChatWithReport(String message, String chatId) {
+        LoveReport loveReport = chatClient
+                .prompt()
+                .user(message)
+                .call()
+                .entity(LoveReport.class);
+    
+        log.info("loveReport: {}", loveReport);
+        return loveReport;
+    }
 
     private static class SimpleInMemoryChatMemory implements ChatMemory {
         private final Map<String, List<Message>> store = new HashMap<>();
