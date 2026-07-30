@@ -1,8 +1,8 @@
 # 🤖 Chen Ai Agent
 
-> **基于 Spring AI + 通义千问的多场景 AI 对话服务。**
+> **基于 Spring AI + 通义千问的多场景 AI 对话服务，支持多轮记忆持久化与结构化输出。**
 
-Chen Ai Agent 是一个由 Spring Boot 驱动的 AI 对话平台，通过 [Spring AI](https://spring.io/projects/spring-ai) 框架接入**阿里云通义千问（Qwen-Max）**模型。支持通用对话、场景化 Agent（恋爱顾问）、多轮记忆上下文，并提供自动生成的交互式 API 文档。
+Chen Ai Agent 是一个由 Spring Boot 驱动的 AI 对话平台，通过 [Spring AI](https://spring.io/projects/spring-ai) 框架接入**阿里云通义千问（Qwen-Max）**模型。支持通用对话、场景化 Agent（恋爱顾问）、多轮记忆持久化（文件存储）、结构化输出，并提供自动生成的交互式 API 文档。
 
 [![Java](https://img.shields.io/badge/Java-21-blue?style=flat-square&logo=openjdk)](https://adoptium.net)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-brightgreen?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
@@ -21,9 +21,13 @@ Chen Ai Agent 是一个由 Spring Boot 驱动的 AI 对话平台，通过 [Sprin
 
 内置 `LoveApp` 场景化对话 Agent，扮演深耕恋爱心理领域的专家，支持**单身、恋爱、已婚**三种状态的情感咨询。引入对话记忆（ChatMemory），支持多轮上下文连贯对话。
 
-### 🧠 Spring AI 原生架构
+### 💾 文件持久化对话记忆
 
-基于 Spring AI 官方 starter 接入大模型，无需处理 API 签名、请求封装等底层逻辑。统一的 `ChatClient` 接口设计，便于扩展更多场景 Agent 和工具调用。
+`FileBasedChatMemory` 实现基于 Kryo 序列化的文件存储，对话历史可跨会话、跨实例持久保存，支持按需检索最近 N 条消息。
+
+### 📋 结构化输出
+
+`LoveApp.doChatWithReport()` 演示了 Spring AI 的结构化输出能力，将 AI 回复自动解析为 `LoveReport` Java Record，便于后续业务处理。
 
 ### 📖 自动 API 文档
 
@@ -31,7 +35,7 @@ Chen Ai Agent 是一个由 Spring Boot 驱动的 AI 对话平台，通过 [Sprin
 
 ### 🧪 完整单元测试
 
-针对核心 Agent 逻辑（`LoveApp`）编写了 Mockito 单元测试，覆盖对话调用、多会话隔离等场景。
+针对核心 Agent 逻辑（`LoveApp`）和对话记忆实现（`FileBasedChatMemory`）编写了完整的 JUnit 5 + Mockito 单元测试。
 
 ---
 
@@ -123,23 +127,30 @@ ai-agent/
 │   │   │   └── io/github/chenyouxin8/chenaiagent/
 │   │   │       ├── ChenAiAgentApplication.java           # Spring Boot 启动类
 │   │   │       ├── app/
-│   │   │       │   └── LoveApp.java                       # 💕 恋爱顾问 Agent（多轮对话 + 记忆）
+│   │   │       │   └── LoveApp.java                       # 💕 恋爱顾问 Agent
+│   │   │       ├── chatmemory/
+│   │   │       │   └── FileBasedChatMemory.java           # 💾 文件持久化对话记忆
 │   │   │       └── controller/
 │   │   │           └── AiController.java                 # 通用对话 REST 接口
 │   │   └── resources/
 │   │       └── application.yml                           # 应用配置
 │   └── test/
-│       └── java/.../chenaiagent/app/
-│           └── LoveAppTest.java                         # 🧪 Agent 单元测试
+│       └── java/.../chenaiagent/
+│           ├── app/
+│           │   └── LoveAppTest.java                       # 🧪 Agent 单元测试
+│           └── chatmemory/
+│               └── FileBasedChatMemoryTest.java           # 🧪 记忆持久化测试
 ```
 
 | 文件 | 说明 |
 |------|------|
-| `pom.xml` | Maven 依赖：Spring Boot 4.1、Spring AI 2.0、阿里 DashScope SDK、Knife4j、Lombok、Hutool |
-| `ChenAiAgentApplication.java` | Spring Boot 应用入口，标注 `@SpringBootApplication` |
-| `LoveApp.java` | 恋爱顾问场景 Agent，角色定位为恋爱心理专家；内置 `SimpleInMemoryChatMemory` 实现对话记忆；按 `chatId` 隔离不同用户的对话上下文 |
-| `AiController.java` | 通用对话控制器，提供 `/ai/chat` GET 接口，接入通义千问模型 |
-| `LoveAppTest.java` | `LoveApp` 的 Mockito 单元测试，覆盖对话调用、多会话隔离等场景 |
+| `pom.xml` | Maven 依赖：Spring Boot 4.1、Spring AI 2.0、阿里 DashScope SDK、Knife4j、Lombok、Hutool、Kryo、JSON Schema Generator |
+| `ChenAiAgentApplication.java` | Spring Boot 应用入口 |
+| `LoveApp.java` | 恋爱顾问场景 Agent：角色定位为恋爱心理专家，支持多轮对话记忆 + 结构化输出（`LoveReport`） |
+| `FileBasedChatMemory.java` | 基于 Kryo 序列化的文件存储实现，支持跨会话持久化、按需检索最近 N 条消息 |
+| `AiController.java` | 通用对话控制器，提供 `/ai/chat` GET 接口 |
+| `FileBasedChatMemoryTest.java` | 对话记忆持久化的完整单元测试：读写、隔离、持久化验证 |
+| `LoveAppTest.java` | `LoveApp` 的 Mockito 单元测试 |
 | `application.yml` | 配置 base-url、API Key、模型名、端口、Knife4j 中文界面设置 |
 | `start-local.cmd` | Windows 启动脚本，需按本机 `JAVA_HOME` 和项目路径修改 |
 
@@ -155,17 +166,31 @@ curl "http://localhost:8123/api/ai/chat?message=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E8%A
 
 ### 恋爱顾问对话（LoveApp）
 
-> LoveApp 通过 Spring AI 的 `ChatMemory` 管理对话历史，不同 `chatId` 之间的上下文相互隔离：
+```java
+// 多轮对话（内存记忆）
+loveApp.doChat("我喜欢一个女生，不知道怎么表白", "user-001");
+loveApp.doChat("如果她拒绝了我该怎么办？", "user-001");  // 自动关联上下文
+
+// 结构化输出
+LoveReport report = loveApp.doChatWithReport("帮我分析一下我的恋爱困境", "user-001");
+System.out.println(report.title());        // 输出标题
+System.out.println(report.suggestions());  // 输出建议列表
+```
+
+### 文件持久化对话记忆
 
 ```java
-// 单身咨询
-loveApp.doChat("我喜欢一个女生，不知道怎么表白", "user-001");
+// 创建基于文件的对话记忆（指定存储目录）
+FileBasedChatMemory memory = new FileBasedChatMemory("/data/chat-memory");
 
-// 恋爱咨询
-loveApp.doChat("我们经常因为小事吵架", "user-002");
+// 添加消息（自动持久化到文件）
+memory.add("user-001", List.of(new UserMessage("你好")));
 
-// 已婚咨询
-loveApp.doChat("婆婆总是干涉我们的育儿方式", "user-003");
+// 获取最近 10 条消息
+List<Message> recent = memory.get("user-001", 10);
+
+// 清空对话历史
+memory.clear("user-001");
 ```
 
 ### 在 Knife4j 文档页调试
@@ -185,6 +210,9 @@ loveApp.doChat("婆婆总是干涉我们的育儿方式", "user-003");
 
 # 仅运行 Agent 测试
 ./mvnw test -Dtest=LoveAppTest
+
+# 仅运行记忆持久化测试
+./mvnw test -Dtest=FileBasedChatMemoryTest
 ```
 
 ---
@@ -194,6 +222,7 @@ loveApp.doChat("婆婆总是干涉我们的育儿方式", "user-003");
 | 方向 | 说明 |
 |------|------|
 | REST API 化 | 将 LoveApp 暴露为独立 REST 接口，支持 Web 前端调用 |
+| 数据库持久化 | 将 `FileBasedChatMemory` 改造为基于 MySQL/Redis 的存储 |
 | 工具调用（Tools） | 让 Agent 调用外部工具（查天气、搜网页） |
 | RAG 知识库 | 对接向量数据库，实现情感领域专业知识增强 |
 | 多模型切换 | 同时支持通义千问、OpenAI 等多个模型 |
@@ -208,6 +237,8 @@ loveApp.doChat("婆婆总是干涉我们的育儿方式", "user-003");
 | 框架 | Spring Boot 4.1 |
 | AI | Spring AI 2.0 + 通义千问 Qwen-Max |
 | SDK | Alibaba DashScope SDK 2.22 |
+| 序列化 | Kryo 5.6（对话记忆持久化） |
+| 结构化输出 | JSON Schema Generator 4.38 |
 | 工具库 | Hutool 5.8、Lombok 1.18 |
 | API 文档 | Knife4j 4.4 + SpringDoc OpenAPI |
 | 测试 | JUnit 5 + Mockito |
