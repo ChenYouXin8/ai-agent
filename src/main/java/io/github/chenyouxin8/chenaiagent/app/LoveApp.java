@@ -1,5 +1,6 @@
 package io.github.chenyouxin8.chenaiagent.app;
 
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -7,6 +8,9 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
+import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -48,6 +52,7 @@ public class LoveApp {
 
         return content;
     }
+
     // 定义数据结构（Java Record）
     record LoveReport(String title, List<String> suggestions) {
     }
@@ -64,9 +69,32 @@ public class LoveApp {
                 .user(message)
                 .call()
                 .entity(LoveReport.class);
-    
+
         log.info("loveReport: {}", loveReport);
         return loveReport;
+    }
+
+    @Resource
+    private VectorStore loveAppVectorStore;
+
+    public String doChatWithRag(String message, String chatId) {
+        ChatResponse chatResponse = chatClient
+                .prompt()
+                .user(message)
+                .advisors(spec -> spec
+                        .param("chat_memory_conversation_id", chatId)
+                        .param("chat_memory_retrieve_size", 10))
+                // 应用知识库问答（Spring AI 2.0 使用 RetrievalAugmentationAdvisor）
+                .advisors(RetrievalAugmentationAdvisor.builder()
+                        .documentRetriever(VectorStoreDocumentRetriever.builder()
+                                .vectorStore(loveAppVectorStore)
+                                .build())
+                        .build())
+                .call()
+                .chatResponse();
+        String content = chatResponse.getResult().getOutput().getText();
+        log.info("content: {}", content);
+        return content;
     }
 
     private static class SimpleInMemoryChatMemory implements ChatMemory {
