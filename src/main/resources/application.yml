@@ -8,6 +8,9 @@ spring:
       chat:
         options:
           model: qwen-max
+      embedding:
+        options:
+          model: text-embedding-v3
 server:
   port : 8123
   servlet:

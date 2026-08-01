@@ -1,6 +1,9 @@
 ###custom###
 application-local.yml
 
+# 运行时生成的对话记忆文件
+.chat-memory/
+
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
