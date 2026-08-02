@@ -29,6 +29,7 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>2.0.0</spring-ai.version>
+        <spring-ai-dashscope.version>2.0.0</spring-ai-dashscope.version>
     </properties>
     <dependencies>
         <dependency>
@@ -85,9 +86,15 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- DashScope 通义千问模型（openai starter + DashScope base-url 配置） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <!-- Chroma 向量数据库（持久化，数据存储在 .chroma/ 目录） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-chroma</artifactId>
         </dependency>
     </dependencies>
 

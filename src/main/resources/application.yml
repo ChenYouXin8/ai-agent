@@ -11,12 +11,19 @@ spring:
       embedding:
         options:
           model: text-embedding-v3
+    # Chroma 向量数据库配置
+    vectorstore:
+      chroma:
+        collection-name: love-app-knowledge
+        initialize-schema: true
+        client:
+          host: http://127.0.0.1
+          port: 8000
+
 server:
-  port : 8123
+  port: 8123
   servlet:
     context-path: /api
-    # application.yml
-
 
 # springdoc-openapi 接口文档的配置
 springdoc:
@@ -30,7 +37,8 @@ springdoc:
     - group: 'default'
       paths-to-match: '/**'
       packages-to-scan: io.github.chenyouxin8.chenaiagent.controller
-# knife4j的增强配置，不需要增强可以不配
+
+# knife4j 的增强配置
 knife4j:
   enable: true
   setting:

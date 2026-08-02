@@ -1,99 +1,149 @@
-# 🤖 Chen Ai Agent
+# chen-ai-agent
 
-> **基于 Spring AI + 通义千问的多场景 AI 对话服务，支持多轮记忆持久化与结构化输出。**
+基于 **Spring Boot + Spring AI** 的智能对话 Agent 项目。集成通义千问大模型、Chroma 向量数据库与文件持久化记忆，提供通用对话、恋爱心理顾问（RAG 知识库增强）与结构化报告能力。
 
-Chen Ai Agent 是一个由 Spring Boot 驱动的 AI 对话平台，通过 [Spring AI](https://spring.io/projects/spring-ai) 框架接入**阿里云通义千问（Qwen-Max）**模型。支持通用对话、场景化 Agent（恋爱顾问）、多轮记忆持久化（文件存储）、结构化输出，并提供自动生成的交互式 API 文档。
+## ✨ 功能特性
 
-[![Java](https://img.shields.io/badge/Java-21-blue?style=flat-square&logo=openjdk)](https://adoptium.net)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-brightgreen?style=flat-square&logo=spring)](https://spring.io/projects/spring-boot)
-[![Spring AI](https://img.shields.io/badge/Spring%20AI-2.0-blue?style=flat-square&logo=spring)](https://github.com/spring-projects/spring-ai)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
+- **通用对话**：基于通义千问 `qwen-max` 的对话接口
+- **恋爱心理顾问**：内置系统提示词，按「单身 / 恋爱 / 已婚」三种状态引导用户描述问题
+- **RAG 知识库问答**：从 Chroma 向量库检索恋爱知识文档，结合检索内容回答，提升专业性与准确性
+- **多轮对话记忆**：基于 Kryo 序列化的文件持久化记忆，按 `chatId` 隔离不同会话
+- **结构化输出**：调用模型按 `LoveReport` 结构返回「标题 + 建议列表」
+- **接口文档**：集成 Knife4j / Swagger UI，可视化调试所有接口
 
----
+## 🛠 技术栈
 
-## ✨ 核心特性
+| 技术 | 版本 | 说明 |
+| --- | --- | --- |
+| Spring Boot | 4.1.0 | 应用框架 |
+| Spring AI | 2.0.0 | AI 应用框架 |
+| Java | 21 | 运行环境 |
+| 通义千问 DashScope | qwen-max / text-embedding-v3 | 对话与 Embedding 模型 |
+| Chroma | 本地持久化（数据存 `.chroma/`） | 向量数据库 |
+| Kryo | 5.6.2 | 对话记忆序列化 |
+| Knife4j | 4.4.0 | 接口文档 |
 
-### 🧠 通用 AI 对话
+> 模型通过 DashScope **兼容 OpenAI 协议**的端点接入（`base-url: https://dashscope.aliyuncs.com/compatible-mode/v1`），因此使用 `spring-ai-starter-model-openai` 即可对接通义千问。
 
-通过 `/api/ai/chat` 接口，与通义千问旗舰模型（Qwen-Max）进行自由对话，无需额外配置，开箱即用。
+## 📁 项目结构
 
-### 💕 恋爱顾问 Agent
-
-内置 `LoveApp` 场景化对话 Agent，扮演深耕恋爱心理领域的专家，支持**单身、恋爱、已婚**三种状态的情感咨询。引入对话记忆（ChatMemory），支持多轮上下文连贯对话。
-
-### 💾 文件持久化对话记忆
-
-`FileBasedChatMemory` 实现基于 Kryo 序列化的文件存储，对话历史可跨会话、跨实例持久保存，支持按需检索最近 N 条消息。
-
-### 📋 结构化输出
-
-`LoveApp.doChatWithReport()` 演示了 Spring AI 的结构化输出能力，将 AI 回复自动解析为 `LoveReport` Java Record，便于后续业务处理。
-
-### 📖 自动 API 文档
-
-集成 **Knife4j** + **SpringDoc OpenAPI**，服务启动后自动生成中文交互式 API 文档，浏览器直接调试所有接口。
-
-### 🧪 完整单元测试
-
-针对核心 Agent 逻辑（`LoveApp`）和对话记忆实现（`FileBasedChatMemory`）编写了完整的 JUnit 5 + Mockito 单元测试。
-
----
+```
+chen-ai-agent
+├── src/main/java/io/github/chenyouxin8/chenaiagent
+│   ├── ChenAiAgentApplication.java        # 启动类
+│   ├── app
+│   │   └── LoveApp.java                   # 恋爱专家核心（三种能力）
+│   ├── chatmemory
+│   │   └── FileBasedChatMemory.java        # Kryo 文件持久化对话记忆
+│   ├── config
+│   │   └── VectorStoreConfig.java          # Chroma 向量存储初始化（分批写入）
+│   ├── controller
+│   │   ├── AiController.java               # 通用对话接口
+│   │   └── LoveAppController.java          # 恋爱专家接口
+│   └── rag
+│       └── LoveAppDocumentLoader.java      # 加载 document/*.md 知识库
+├── src/main/resources
+│   ├── application.yml                     # 配置（DashScope + Chroma）
+│   └── document/                           # 知识库 Markdown（3 篇，运行时切分为 15 个文档）
+│       ├── 恋爱常见问题和回答 - 单身篇.md
+│       ├── 恋爱常见问题和回答 - 已婚篇.md
+│       └── 恋爱常见问题和回答 - 恋爱篇.md
+└── pom.xml
+```
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- JDK 21+
-- Windows（启动脚本为 `.cmd`，Linux/Mac 可用 `mvnw`）
+- JDK 21
+- Python 3.11+（用于运行 Chroma 向量库）
+- 通义千问 API Key（[DashScope](https://dashscope.console.aliyun.com/) 申请）
 
-### 安装 & 启动
-
-**方式一：一键启动（Windows）**
-
-```cmd
-双击运行 start-local.cmd
-```
-
-> `start-local.cmd` 默认读取 `D:\projectt\chen-ai-agent` 目录。如目录不同，请修改脚本内路径后运行。
-
-**方式二：命令行启动**
+### 1. 启动 Chroma 向量数据库
 
 ```bash
-# 克隆仓库
-git clone https://github.com/ChenYouXin8/ai-agent.git
-cd ai-agent
-
-# 设置 API Key
-set AI_DASHSCOPE_API_KEY=your_api_key_here
-
-# Windows 启动
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
-
-# Linux/Mac 启动
-./mvnw spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=local"
+pip install chromadb
+chroma run --host 0.0.0.0 --port 8000
 ```
 
-### 验证服务
+保持该进程运行。向量数据持久化在当前目录的 `.chroma/` 文件夹，重启不丢失。
 
-服务启动后，访问以下地址：
+### 2. 配置 API Key
 
-| 地址 | 说明 |
-|------|------|
-| http://localhost:8123/api/ai/chat?message=你好 | 通用对话接口 |
-| http://localhost:8123/api/swagger-ui.html | Knife4j API 文档（中文） |
-| http://localhost:8123/api/v3/api-docs | OpenAPI JSON |
+设置环境变量（推荐）：
 
----
+```bash
+# Linux / macOS
+export AI_DASHSCOPE_API_KEY=你的_DashScope_API_Key
 
-## ⚙️ 配置说明
+# Windows (PowerShell)
+$env:AI_DASHSCOPE_API_KEY="你的_DashScope_API_Key"
+```
 
-### 环境变量
+或在 `application.yml` 中把 `${AI_DASHSCOPE_API_KEY}` 替换为真实 Key。
 
-| 变量名 | 必填 | 说明 |
-|--------|:----:|------|
-| `AI_DASHSCOPE_API_KEY` | ✅ | 阿里云 DashScope API Key。[获取地址](https://dashscope.console.aliyun.com) |
+### 3. 启动项目
 
-### application.yml 关键配置
+```bash
+./mvnw spring-boot:run
+# 或使用项目自带脚本
+./start-local.cmd
+```
+
+启动日志出现 `Tomcat started on port 8123` 即成功，同时会自动把知识库文档写入 Chroma 向量存储。
+
+### 4. 访问接口文档
+
+打开 **http://localhost:8123/api/swagger-ui.html** ，即可在线调试所有接口。
+
+## 📡 接口说明
+
+所有接口统一带 `context-path=/api`，服务端口 `8123`。
+
+| 方法 | 路径 | 说明 | 参数 |
+| --- | --- | --- | --- |
+| GET | `/api/ai/chat` | 通用对话 | `message` |
+| GET | `/api/ai/love/chat` | 恋爱专家（多轮记忆） | `message`, `chatId` |
+| POST | `/api/ai/love/report` | 结构化恋爱报告 | Body: `{ "message": "...", "chatId": "..." }` |
+| GET | `/api/ai/love/rag` | 知识库 RAG 问答 | `message`, `chatId` |
+
+### 调用示例
+
+```bash
+# 通用对话
+curl "http://localhost:8123/api/ai/chat?message=你好"
+
+# 恋爱专家（多轮对话，chatId 区分会话）
+curl "http://localhost:8123/api/ai/love/chat?message=我是单身，该怎么扩大社交圈&chatId=user-001"
+
+# 知识库 RAG 问答
+curl "http://localhost:8123/api/ai/love/rag?message=异地恋该怎么维持&chatId=user-001"
+
+# 结构化报告
+curl -X POST "http://localhost:8123/api/ai/love/report" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"我总是追不到喜欢的人","chatId":"user-001"}'
+```
+
+## 🧠 知识库与 RAG
+
+- 知识库文档放在 `src/main/resources/document/`，支持 `.md` 文件，启动时自动加载。
+- `LoveAppDocumentLoader` 用 `MarkdownDocumentReader` 按标题 / 水平线将每篇文档切分为多个片段（3 篇文档共切出 15 个片段）。
+- `VectorStoreConfig` 在应用启动时将文档写入 Chroma 向量库；受 DashScope `text-embedding-v3` **单次批量上限 10 条**限制，代码已做分批写入。
+- RAG 接口 `/api/ai/love/rag` 通过 `RetrievalAugmentationAdvisor` + `VectorStoreDocumentRetriever` 先检索相关片段，再交给模型回答。
+
+### 扩展知识库
+
+往 `src/main/resources/document/` 放入新的 `.md` 文件，重启项目即可自动入库（Chroma 已配置 `initialize-schema: true`）。
+
+## 💾 对话记忆持久化
+
+- 记忆由 `FileBasedChatMemory` 实现，使用 Kryo 将对话序列化为 `.kryo` 文件，存于项目根目录的 `.chat-memory/` 文件夹。
+- 按 `chatId` 隔离：每个会话对应一个 `{chatId}.kryo` 文件。
+- 默认携带最近 10 条上下文（`chat_memory_retrieve_size=10`）。
+- 清除某会话记忆：调用 `FileBasedChatMemory.clear(chatId)`。
+
+## ⚙️ 关键配置（application.yml）
 
 ```yaml
 spring:
@@ -103,155 +153,30 @@ spring:
       api-key: ${AI_DASHSCOPE_API_KEY}
       chat:
         options:
-          model: qwen-max   # 通义千问旗舰模型
-
+          model: qwen-max          # 对话模型
+      embedding:
+        options:
+          model: text-embedding-v3 # 向量化模型
+    vectorstore:
+      chroma:
+        collection-name: love-app-knowledge
+        initialize-schema: true
+        client:
+          host: http://127.0.0.1
+          port: 8000               # 需与 Chroma 服务端口一致
 server:
   port: 8123
   servlet:
-    context-path: /api     # 所有接口统一前缀
+    context-path: /api
 ```
 
-> **提示**：如需切换模型，可将 `qwen-max` 改为 `qwen-plus`、`qwen-turbo` 等，模型列表见 [通义千问文档](https://help.aliyun.com/zh/dashscope)。
+## 🗺 后续扩展方向
 
----
+- 接入微信 / 网页前端，把 `LoveApp` 暴露为对话服务
+- 扩充知识库到更多领域（如情感沟通话术、心理疏导等）
+- 数据量增大后，将向量库从 Chroma 迁移到 PGVector / Milvus
+- 引入 Rerank 提升检索精度
 
-## 🗂️ 项目结构
-
-```
-ai-agent/
-├── pom.xml                                           # Maven 依赖配置
-├── start-local.cmd                                   # Windows 一键启动脚本
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── io/github/chenyouxin8/chenaiagent/
-│   │   │       ├── ChenAiAgentApplication.java           # Spring Boot 启动类
-│   │   │       ├── app/
-│   │   │       │   └── LoveApp.java                       # 💕 恋爱顾问 Agent
-│   │   │       ├── chatmemory/
-│   │   │       │   └── FileBasedChatMemory.java           # 💾 文件持久化对话记忆
-│   │   │       └── controller/
-│   │   │           └── AiController.java                 # 通用对话 REST 接口
-│   │   └── resources/
-│   │       └── application.yml                           # 应用配置
-│   └── test/
-│       └── java/.../chenaiagent/
-│           ├── app/
-│           │   └── LoveAppTest.java                       # 🧪 Agent 单元测试
-│           └── chatmemory/
-│               └── FileBasedChatMemoryTest.java           # 🧪 记忆持久化测试
-```
-
-| 文件 | 说明 |
-|------|------|
-| `pom.xml` | Maven 依赖：Spring Boot 4.1、Spring AI 2.0、阿里 DashScope SDK、Knife4j、Lombok、Hutool、Kryo、JSON Schema Generator |
-| `ChenAiAgentApplication.java` | Spring Boot 应用入口 |
-| `LoveApp.java` | 恋爱顾问场景 Agent：角色定位为恋爱心理专家，支持多轮对话记忆 + 结构化输出（`LoveReport`） |
-| `FileBasedChatMemory.java` | 基于 Kryo 序列化的文件存储实现，支持跨会话持久化、按需检索最近 N 条消息 |
-| `AiController.java` | 通用对话控制器，提供 `/ai/chat` GET 接口 |
-| `FileBasedChatMemoryTest.java` | 对话记忆持久化的完整单元测试：读写、隔离、持久化验证 |
-| `LoveAppTest.java` | `LoveApp` 的 Mockito 单元测试 |
-| `application.yml` | 配置 base-url、API Key、模型名、端口、Knife4j 中文界面设置 |
-| `start-local.cmd` | Windows 启动脚本，需按本机 `JAVA_HOME` 和项目路径修改 |
-
----
-
-## 💡 使用示例
-
-### 通用对话（AiController）
-
-```bash
-curl "http://localhost:8123/api/ai/chat?message=%E4%BD%A0%E5%A5%BD%EF%BC%8C%E8%AF%B7%E5%88%86%E4%BA%AB%E4%B8%80%E4%B8%AA%E6%8A%80%E6%9C%AF%E7%9F%A5%E8%AF%86"
-```
-
-### 恋爱顾问对话（LoveApp）
-
-```java
-// 多轮对话（内存记忆）
-loveApp.doChat("我喜欢一个女生，不知道怎么表白", "user-001");
-loveApp.doChat("如果她拒绝了我该怎么办？", "user-001");  // 自动关联上下文
-
-// 结构化输出
-LoveReport report = loveApp.doChatWithReport("帮我分析一下我的恋爱困境", "user-001");
-System.out.println(report.title());        // 输出标题
-System.out.println(report.suggestions());  // 输出建议列表
-```
-
-### 文件持久化对话记忆
-
-```java
-// 创建基于文件的对话记忆（指定存储目录）
-FileBasedChatMemory memory = new FileBasedChatMemory("/data/chat-memory");
-
-// 添加消息（自动持久化到文件）
-memory.add("user-001", List.of(new UserMessage("你好")));
-
-// 获取最近 10 条消息
-List<Message> recent = memory.get("user-001", 10);
-
-// 清空对话历史
-memory.clear("user-001");
-```
-
-### 在 Knife4j 文档页调试
-
-1. 启动服务
-2. 打开 http://localhost:8123/api/swagger-ui.html
-3. 找到 `GET /ai/chat`
-4. 填入 `message` 参数，点击"执行"
-
----
-
-## 🧪 运行测试
-
-```bash
-# 运行所有测试
-./mvnw test
-
-# 仅运行 Agent 测试
-./mvnw test -Dtest=LoveAppTest
-
-# 仅运行记忆持久化测试
-./mvnw test -Dtest=FileBasedChatMemoryTest
-```
-
----
-
-## 🤝 扩展方向
-
-| 方向 | 说明 |
-|------|------|
-| REST API 化 | 将 LoveApp 暴露为独立 REST 接口，支持 Web 前端调用 |
-| 数据库持久化 | 将 `FileBasedChatMemory` 改造为基于 MySQL/Redis 的存储 |
-| 工具调用（Tools） | 让 Agent 调用外部工具（查天气、搜网页） |
-| RAG 知识库 | 对接向量数据库，实现情感领域专业知识增强 |
-| 多模型切换 | 同时支持通义千问、OpenAI 等多个模型 |
-| WebSocket 流式对话 | 改为 SSE 流式输出，提升实时交互体验 |
-
----
-
-## 📦 技术栈
-
-| 分类 | 技术 |
-|------|------|
-| 框架 | Spring Boot 4.1 |
-| AI | Spring AI 2.0 + 通义千问 Qwen-Max |
-| SDK | Alibaba DashScope SDK 2.22 |
-| 序列化 | Kryo 5.6（对话记忆持久化） |
-| 结构化输出 | JSON Schema Generator 4.38 |
-| 工具库 | Hutool 5.8、Lombok 1.18 |
-| API 文档 | Knife4j 4.4 + SpringDoc OpenAPI |
-| 测试 | JUnit 5 + Mockito |
-| 构建 | Maven（Wrapper 内置）|
-
----
-
-## 🤝 贡献
-
-欢迎提交 Issue 或 Pull Request！
-
----
-
-## 📄 License
+## 📄 许可证
 
 [MIT](LICENSE) © 2026 ChenYouXin8

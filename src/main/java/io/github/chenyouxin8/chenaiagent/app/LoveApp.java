@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
@@ -14,10 +13,7 @@ import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 恋爱心理助手核心服务类
@@ -122,9 +118,9 @@ public class LoveApp {
         ChatResponse chatResponse = chatClient
                 .prompt()
                 .user(message)
-                // 绑定会话记忆
+                // 绑定会话记忆（修复：参数名与 doChat 保持一致）
                 .advisors(spec -> spec
-                        .param("chat_memory_conversation_id", chatId)
+                        .param(ChatMemory.CONVERSATION_ID, chatId)
                         .param("chat_memory_retrieve_size", 10))
                 // 应用知识库问答（Spring AI 2.0 使用 RetrievalAugmentationAdvisor + VectorStoreDocumentRetriever）
                 .advisors(RetrievalAugmentationAdvisor.builder()
@@ -137,27 +133,5 @@ public class LoveApp {
         String content = chatResponse.getResult().getOutput().getText();
         log.info("content: {}", content);
         return content;
-    }
-
-    /**
-     * 基于内存 Map 的简易对话记忆实现（进程内有效）
-     */
-    private static class SimpleInMemoryChatMemory implements ChatMemory {
-        private final Map<String, List<Message>> store = new HashMap<>();
-
-        @Override
-        public void add(String conversationId, List<Message> messages) {
-            store.computeIfAbsent(conversationId, k -> new ArrayList<>()).addAll(messages);
-        }
-
-        @Override
-        public List<Message> get(String conversationId) {
-            return store.getOrDefault(conversationId, List.of());
-        }
-
-        @Override
-        public void clear(String conversationId) {
-            store.remove(conversationId);
-        }
     }
 }

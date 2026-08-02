@@ -4,46 +4,53 @@ import io.github.chenyouxin8.chenaiagent.rag.LoveAppDocumentLoader;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.context.annotation.Bean;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 知识库向量存储配置
- *
- * 当前使用内存向量存储（SimpleVectorStore），适合本地开发。
- * 生产环境可替换为：Milvus / Qdrant / Pgvector 等持久化向量数据库。
+ * 知识库向量存储初始化配置
+ * <p>
+ * Chroma VectorStore Bean 由 Spring Boot 自动配置创建。
+ * 本配置负责：启动时自动加载 document/*.md 文档并写入向量存储。
+ * <p>
+ * 需要提前启动 Chroma 服务：chroma run --host 0.0.0.0 --port 8000
  */
 @Configuration
 @Slf4j
-public class VectorStoreConfig {
+public class VectorStoreConfig implements InitializingBean {
+
+    private static final int BATCH_SIZE = 10;
 
     @Resource
-    private EmbeddingModel embeddingModel;
+    private VectorStore vectorStore;
 
-    /**
-     * 创建内存向量存储 Bean
-     * - EmbeddingModel：从文本生成向量（用于 RAG 检索）
-     * - SimpleVectorStore：内存存储，开发测试用
-     */
-    @Bean
-    public VectorStore loveAppVectorStore(LoveAppDocumentLoader documentLoader) {
-        log.info("初始化知识库向量存储（内存模式）");
-        SimpleVectorStore vectorStore = SimpleVectorStore.builder(embeddingModel)
-                .build();
+    @Resource
+    private LoveAppDocumentLoader documentLoader;
 
-        // 启动时自动加载知识库文档并写入向量存储
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        log.info("检查并初始化 Chroma 向量存储...");
+
         List<Document> documents = documentLoader.loadMarkdowns();
-        if (!documents.isEmpty()) {
-            log.info("加载知识库文档 {} 篇到向量存储", documents.size());
-            vectorStore.add(documents);
-        } else {
-            log.warn("未加载到任何知识库文档，向量存储为空");
+        if (documents.isEmpty()) {
+            log.warn("未加载到任何知识库文档，请检查 resources/document/ 目录");
+            return;
         }
-        return vectorStore;
+
+        log.info("加载知识库文档 {} 篇到向量存储（分批写入，每批最多 {} 篇）", documents.size(), BATCH_SIZE);
+
+        // DashScope text-embedding-v3 单次批量上限为 10 条，手动分批
+        for (int i = 0; i < documents.size(); i += BATCH_SIZE) {
+            int end = Math.min(i + BATCH_SIZE, documents.size());
+            List<Document> batch = documents.subList(i, end);
+            vectorStore.add(batch);
+            log.info("已写入第 {}-{} 篇文档", i + 1, end);
+        }
+
+        log.info("知识库文档写入完成");
     }
 }
