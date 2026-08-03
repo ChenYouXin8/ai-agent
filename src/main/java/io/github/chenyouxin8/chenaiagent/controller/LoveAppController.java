@@ -1,63 +1,64 @@
 package io.github.chenyouxin8.chenaiagent.controller;
 
 import io.github.chenyouxin8.chenaiagent.app.LoveApp;
+import io.github.chenyouxin8.chenaiagent.common.ApiResponse;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 恋爱专家 Agent HTTP 接口
- *
- * 将 LoveApp 的能力暴露为 REST 接口，让前端/外部系统可以调用。
- */
 @RestController
 @RequestMapping("/ai/love")
 public class LoveAppController {
 
     private final LoveApp loveApp;
 
-    // 通过 Spring 注入 LoveApp Bean（LoveApp 有 @Component 注解，已被 Spring 管理）
     public LoveAppController(LoveApp loveApp) {
         this.loveApp = loveApp;
     }
 
-    /**
-     * 恋爱专家对话接口
-     *
-     * GET /api/ai/love/chat?message=xxx&chatId=xxx
-     *
-     * @param message 用户输入
-     * @param chatId  会话 ID（用于区分不同用户的对话历史）
-     */
+    /** 恋爱专家对话（带记忆） */
     @GetMapping("/chat")
-    public String chat(@RequestParam String message,
-                       @RequestParam(defaultValue = "default") String chatId) {
-        return loveApp.doChat(message, chatId);
+    public ApiResponse<String> chat(@RequestParam String message,
+                                    @RequestParam(defaultValue = "default") String chatId) {
+        // 参数校验：message 不能为空
+        if (message == null || message.isBlank()) {
+            return ApiResponse.badRequest("消息内容不能为空");
+        }
+        String reply = loveApp.doChat(message, chatId);
+        return ApiResponse.ok(reply);
     }
 
-    /**
-     * 恋爱专家结构化报告接口
-     *
-     * POST /api/ai/love/report
-     * Body: { "message": "帮我分析一下我的恋爱困境", "chatId": "user-001" }
-     */
+    /** 恋爱专家结构化报告 */
     @PostMapping("/report")
-    public LoveApp.LoveReport report(@RequestBody Map<String, String> body) {
+    public ApiResponse<LoveApp.LoveReport> report(@RequestBody Map<String, String> body) {
         String message = body.get("message");
+        if (message == null || message.isBlank()) {
+            return ApiResponse.badRequest("消息内容不能为空");
+        }
         String chatId = body.getOrDefault("chatId", "default");
-        return loveApp.doChatWithReport(message, chatId);
+        LoveApp.LoveReport report = loveApp.doChatWithReport(message, chatId);
+        return ApiResponse.ok(report);
     }
 
-    /**
-     * 恋爱专家 RAG 知识库问答接口
-     *
-     * GET /api/ai/love/rag?message=xxx&chatId=xxx
-     *
-     * 会先从知识库检索相关文档，再结合文档回答
-     */
+    /** 恋爱专家 RAG 知识库问答 */
     @GetMapping("/rag")
-    public String rag(@RequestParam String message,
-                      @RequestParam(defaultValue = "default") String chatId) {
-        return loveApp.doChatWithRag(message, chatId);
+    public ApiResponse<String> rag(@RequestParam String message,
+                                   @RequestParam(defaultValue = "default") String chatId) {
+        if (message == null || message.isBlank()) {
+            return ApiResponse.badRequest("消息内容不能为空");
+        }
+        String reply = loveApp.doChatWithRag(message, chatId);
+        return ApiResponse.ok(reply);
+    }
+
+    /** 恋爱专家工具调用对话（AI 可调用文件/搜索/PDF 等工具） */
+    @GetMapping("/tools")
+    public ApiResponse<String> tools(@RequestParam String message,
+                                     @RequestParam(defaultValue = "default") String chatId) {
+        if (message == null || message.isBlank()) {
+            return ApiResponse.badRequest("消息内容不能为空");
+        }
+        String reply = loveApp.doChatWithTools(message, chatId);
+        return ApiResponse.ok(reply);
     }
 }

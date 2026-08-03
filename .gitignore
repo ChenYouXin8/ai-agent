@@ -4,6 +4,12 @@ application-local.yml
 # 运行时生成的对话记忆文件
 .chat-memory/
 
+# Chroma 向量数据库本地数据
+.chroma/
+
+# 临时文件夹
+tmp/
+
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar

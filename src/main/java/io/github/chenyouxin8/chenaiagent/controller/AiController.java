@@ -1,5 +1,6 @@
 package io.github.chenyouxin8.chenaiagent.controller;
 
+import io.github.chenyouxin8.chenaiagent.tools.WebSearchTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,9 +14,10 @@ public class AiController {
 
     private final ChatClient chatClient;
 
-    public AiController(ChatClient.Builder builder) {
+    public AiController(ChatClient.Builder builder, WebSearchTool webSearchTool) {
         this.chatClient = builder
                 .defaultAdvisors(new SimpleLoggerAdvisor())
+                .defaultTools(webSearchTool)
                 .build();
     }
 
