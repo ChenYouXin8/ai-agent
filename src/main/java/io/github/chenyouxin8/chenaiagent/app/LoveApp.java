@@ -3,6 +3,7 @@ package io.github.chenyouxin8.chenaiagent.app;
 import io.github.chenyouxin8.chenaiagent.advisor.MyLoggerAdvisor;
 import io.github.chenyouxin8.chenaiagent.chatmemory.FileBasedChatMemory;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -12,6 +13,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.stereotype.Component;
 
@@ -74,6 +76,10 @@ public class LoveApp {
                 .call()
                 .chatResponse();
 
+        if (chatResponse == null || chatResponse.getResult() == null) {
+            log.error("AI 响应为空，message: {}", message);
+            throw new IllegalStateException("AI 响应为空");
+        }
         String content = chatResponse.getResult().getOutput().getText();
         log.info("content: {}", content);
 
@@ -97,6 +103,10 @@ public class LoveApp {
         LoveReport loveReport = chatClient
                 .prompt()
                 .user(message)
+                // 绑定会话记忆，与 doChat 保持一致
+                .advisors(spec -> spec
+                        .param(ChatMemory.CONVERSATION_ID, chatId)
+                        .param("chat_memory_retrieve_size", 10))
                 .call()
                 .entity(LoveReport.class);
 
@@ -155,4 +165,23 @@ public class LoveApp {
         log.info("content: {}", content);
         return content;
     }
+    @Autowired
+    private List<ToolCallbackProvider> toolCallbackProviders;
+
+    public String doChatWithMcp(String message, String chatId) {
+        ChatResponse response = chatClient
+                .prompt()
+                .user(message)
+                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId)
+                        .param("chat_memory_retrieve_size", 10))
+                // 开启日志，便于观察效果
+                .advisors(new MyLoggerAdvisor())
+                .tools(toolCallbackProviders.toArray(new ToolCallbackProvider[0]))
+                .call()
+                .chatResponse();
+        String content = response.getResult().getOutput().getText();
+        log.info("content: {}", content);
+        return content;
+    }
+
 }

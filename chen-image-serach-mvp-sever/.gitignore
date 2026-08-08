@@ -1,18 +1,3 @@
-###custom###
-application-local.yml
-
-# 真实 MCP server 配置（含密钥），本地专用，不提交
-mcp-servers.json
-
-# 运行时生成的对话记忆文件
-.chat-memory/
-
-# Chroma 向量数据库本地数据
-.chroma/
-
-# 临时文件夹
-tmp/
-
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar

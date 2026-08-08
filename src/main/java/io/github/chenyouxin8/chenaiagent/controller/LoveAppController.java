@@ -61,4 +61,15 @@ public class LoveAppController {
         String reply = loveApp.doChatWithTools(message, chatId);
         return ApiResponse.ok(reply);
     }
+
+    /** 恋爱专家 + MCP 工具调用（接 mcp-servers.json 配置的外部服务，如高德地图/图片搜索） */
+    @GetMapping("/mcp")
+    public ApiResponse<String> mcp(@RequestParam String message,
+                                   @RequestParam(defaultValue = "default") String chatId) {
+        if (message == null || message.isBlank()) {
+            return ApiResponse.badRequest("消息内容不能为空");
+        }
+        String reply = loveApp.doChatWithMcp(message, chatId);
+        return ApiResponse.ok(reply);
+    }
 }
