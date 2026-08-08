@@ -1,4 +1,4 @@
-package io.github.chenyouxin8.chenimageserachmvpsever.tools;
+package io.github.chenyouxin8.chenimagesearchmcpserver.tools;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;

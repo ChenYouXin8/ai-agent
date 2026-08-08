@@ -1,6 +1,6 @@
-package io.github.chenyouxin8.chenimageserachmvpsever;
+package io.github.chenyouxin8.chenimagesearchmcpserver;
 
-import io.github.chenyouxin8.chenimageserachmvpsever.tools.ImageSearchTool;
+import io.github.chenyouxin8.chenimagesearchmcpserver.tools.ImageSearchTool;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.boot.SpringApplication;
@@ -8,10 +8,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 @SpringBootApplication
-public class ChenImageSerachMvpSeverApplication {
+public class ChenImageSearchMcpServerApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(ChenImageSerachMvpSeverApplication.class, args);
+        SpringApplication.run(ChenImageSearchMcpServerApplication.class, args);
     }
 
     @Bean

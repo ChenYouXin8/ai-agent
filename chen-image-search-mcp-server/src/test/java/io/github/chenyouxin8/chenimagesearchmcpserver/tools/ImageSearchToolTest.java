@@ -1,4 +1,4 @@
-package io.github.chenyouxin8.chenimageserachmvpsever.tools;
+package io.github.chenyouxin8.chenimagesearchmcpserver.tools;
 
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Assertions;

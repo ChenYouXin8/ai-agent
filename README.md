@@ -36,7 +36,7 @@
 
 ```
 chen-ai-agent
-├── chen-image-serach-mvp-sever/        # MCP Server 子模块（stdio 模式，暴露图片搜索工具）
+├── chen-image-search-mcp-server/       # MCP Server 子模块（stdio 模式，暴露图片搜索工具）
 │   ├── pom.xml
 │   └── src/main/java/.../tools/ImageSearchTool.java   # Pexels 图片搜索工具
 ├── src/main/java/io/github/chenyouxin8/chenaiagent
@@ -124,9 +124,9 @@ cp src/main/resources/mcp-servers.example.json src/main/resources/mcp-servers.js
 主程序通过 `java -jar` 启动图片搜索 MCP Server，需先打包：
 
 ```bash
-cd chen-image-serach-mvp-sever
+cd chen-image-search-mcp-server
 ../mvnw -DskipTests package
-# 生成 chen-image-serach-mvp-sever/target/chen-image-serach-mvp-sever-0.0.1-SNAPSHOT.jar
+# 生成 chen-image-search-mcp-server/target/chen-image-search-mcp-server-0.0.1-SNAPSHOT.jar
 ```
 
 `amap-maps` Server 由 `npx` 在运行时自动拉取，无需手动打包。
@@ -222,8 +222,8 @@ spring:
 
 - `mcp-servers.json`（本地、gitignored）声明两个 Server：
   - **amap-maps**：`npx -y @amap/amap-maps-mcp-server`，需环境变量 `AMAP_MAPS_API_KEY`（高德开放平台 Key）。
-  - **chen-image-search-mcp-server**：`java -jar` 启动子模块 `chen-image-serach-mvp-sever` 打出的 jar，需环境变量 `PEXELS_API_KEY`（Pexels Key）。
-- 子模块 `chen-image-serach-mvp-sever` 是一个 **stdio 模式**的 MCP Server，通过 `ImageSearchTool`（Pexels 图片搜索）暴露 `mcpServers` 工具，由主程序以子进程方式拉起。
+  - **chen-image-search-mcp-server**：`java -jar` 启动子模块 `chen-image-search-mcp-server` 打出的 jar，需环境变量 `PEXELS_API_KEY`（Pexels Key）。
+- 子模块 `chen-image-search-mcp-server` 是一个 **stdio 模式**的 MCP Server，通过 `ImageSearchTool`（Pexels 图片搜索）暴露 `mcpServers` 工具，由主程序以子进程方式拉起。
 - 接口 `/api/ai/love/mcp` 调用 `LoveApp.doChatWithMcp`，把 MCP Server 提供的工具交给大模型使用。
 - 新增 MCP Server 只需在 `mcp-servers.json` 追加声明，无需改动业务代码。
 
@@ -284,7 +284,6 @@ server:
 
 - 接入微信 / 网页前端，把 `LoveApp` 暴露为对话服务
 - 扩充内置知识库与 MCP Server 清单（如天气、日历、数据库查询等）
-- 将模块 `chen-image-serach-mvp-sever` 重命名为规范的 `chen-image-search-mcp-server`（统一命名）
 - 数据量增大后，将向量库从 Chroma 迁移到 PGVector / Milvus
 - 引入 Rerank 提升检索精度
 - 工具集继续扩展：定时任务、邮件发送等

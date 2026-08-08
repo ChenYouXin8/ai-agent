@@ -9,10 +9,10 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>io.github.ChenYouXin8</groupId>
-    <artifactId>chen-image-serach-mvp-sever</artifactId>
+    <artifactId>chen-image-search-mcp-server</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>chen-image-serach-mvp-sever</name>
-    <description>chen-image-serach-mvp-sever</description>
+    <name>chen-image-search-mcp-server</name>
+    <description>chen-image-search-mcp-server</description>
     <url/>
     <licenses>
         <license/>

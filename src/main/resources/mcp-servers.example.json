@@ -17,7 +17,7 @@
         "-Dspring.main.web-application-type=none",
         "-Dlogging.pattern.console=",
         "-jar",
-        "chen-image-serach-mvp-sever/target/chen-image-serach-mvp-sever-0.0.1-SNAPSHOT.jar"
+        "chen-image-search-mcp-server/target/chen-image-search-mcp-server-0.0.1-SNAPSHOT.jar"
       ],
       "env": {}
     }
