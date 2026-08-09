@@ -9,7 +9,8 @@
 - **RAG 知识库问答**：从 Chroma 向量库检索恋爱知识文档，结合检索内容回答，提升专业性与准确性
 - **结构化报告**：调用模型按 `LoveReport` 结构返回「标题 + 建议列表」
 - **多轮对话记忆**：基于 Kryo 序列化的文件持久化记忆，按 `chatId` 隔离不同会话
-- **内置 AI 工具调用**：Function Calling 机制，模型可按需调用 6 类工具（搜索 / 抓取 / 文件 / 下载 / 终端 / PDF）
+- **内置 AI 工具调用**：Function Calling 机制，模型可按需调用 7 类工具（搜索 / 抓取 / 文件 / 下载 / 终端 / PDF / 终止）
+- **Agent 智能体框架**：内置 YuManus 全能助手，基于 ReAct 模式 + 工具调用循环，可自主拆解复杂任务并调用内置工具（搜索 / 文件 / PDF 等）完成
 - **MCP 工具集成**：通过 `spring-ai-starter-mcp-client` 接入 `mcp-servers.json` 声明的外部 MCP Server（当前含高德地图、图片搜索）
 - **统一响应格式**：所有接口返回 `ApiResponse<T>`，全局异常四层兜底
 - **接口文档**：集成 Knife4j / Swagger UI，可视化调试所有接口
@@ -51,7 +52,12 @@ chen-ai-agent
 │   │   ├── AiController.java              # 通用对话接口（挂载网页搜索工具）
 │   │   └── LoveAppController.java         # 恋爱专家接口（chat / report / rag / tools / mcp）
 │   ├── rag/LoveAppDocumentLoader.java     # 加载 document/*.md 知识库
-│   └── tools/                             # AI 可调用的内置工具集（6 个）
+│   ├── agent/                             # Agent 智能体框架（ReAct + 工具调用循环）
+│   │   ├── BaseAgent.java                 # 抽象基类：状态机 + 步数上限
+│   │   ├── ReActAgent.java                # think/act 两阶段抽象
+│   │   ├── ToolCallAgent.java             # 工具调用实现（复用 allTools）
+│   │   └── ChenManus.java                 # YuManus 全能助手（@Component）
+│   └── tools/                             # AI 可调用的内置工具集（7 个）
 ├── src/main/resources
 │   ├── application.yml                    # 公共配置（API Key 用环境变量占位）
 │   ├── application-local.yml              # 本地配置（真实 Key，已被 .gitignore 排除）
@@ -161,7 +167,7 @@ cd chen-image-search-mcp-server
 | GET | `/api/ai/love/chat` | 恋爱专家（多轮记忆） | `message`, `chatId` |
 | POST | `/api/ai/love/report` | 结构化恋爱报告 | Body: `{ "message": "...", "chatId": "..." }` |
 | GET | `/api/ai/love/rag` | 知识库 RAG 问答 | `message`, `chatId` |
-| GET | `/api/ai/love/tools` | 恋爱专家 + 内置 6 类工具调用 | `message`, `chatId` |
+| GET | `/api/ai/love/tools` | 恋爱专家 + 内置 7 类工具调用 | `message`, `chatId` |
 | GET | `/api/ai/love/mcp` | 恋爱专家 + MCP 外部工具调用 | `message`, `chatId` |
 
 ### 调用示例
@@ -190,7 +196,7 @@ curl "http://localhost:8123/api/ai/love/mcp?message=帮我搜一张电脑的图�
 
 ## 🧰 内置 AI 工具调用
 
-模型通过 **Function Calling** 机制自动判断何时调用工具、传什么参数，无需用户手动指定。`ToolRegistration` 将 6 个工具注册为 `ToolCallback[]` Bean，`LoveApp.doChatWithTools`（恋爱专家）与 `AiController`（通用对话）均已接入。
+模型通过 **Function Calling** 机制自动判断何时调用工具、传什么参数，无需用户手动指定。`ToolRegistration` 将 7 个工具注册为 `ToolCallback[]` Bean，`LoveApp.doChatWithTools`（恋爱专家）与 `AiController`（通用对话）均已接入。
 
 | 工具 | 能力 | 触发示例 |
 | --- | --- | --- |
@@ -200,10 +206,25 @@ curl "http://localhost:8123/api/ai/love/mcp?message=帮我搜一张电脑的图�
 | `ResourceDownloadTool` | 下载网络资源到本地 | 「下载 https://xxx/file.zip 保存为 a.zip」 |
 | `TerminalOperationTool` | 执行终端命令并返回输出 | 「执行命令 echo hello」 |
 | `PDFGenerationTool` | 生成 PDF（内置中文字体） | 「生成一个 PDF 文件 test.pdf」 |
+| `TerminateTool` | 终止交互（任务完成后由 Agent 调用） | 由 Agent 自动调用 |
 
 - 文件类工具默认保存到 `tmp/` 目录（`FileConstant.FILE_SAVE_DIR`，已被 `.gitignore` 排除）。
 - `MyLoggerAdvisor` 在控制台打印每次调用的「用户输入 → AI 回复」，方便观察工具调用过程。
-- `/api/ai/chat` 默认只挂载 `WebSearchTool`；`/api/ai/love/tools` 挂载全部 6 个工具。
+- `/api/ai/chat` 默认只挂载 `WebSearchTool`；`/api/ai/love/tools` 挂载全部 7 个工具。
+
+## 🤖 Agent 智能体框架
+
+项目内置一套轻量 **ReAct 风格的 Agent 框架**，让模型像「助手」一样自主拆解并完成任务，而非一问一答。
+
+- **分层设计**：
+  - `BaseAgent`：抽象基类，维护状态机（`IDLE / RUNNING / FINISHED / ERROR`）与「最多 N 步」执行循环，子类实现 `step()`。
+  - `ReActAgent`：抽象子类，拆出 `think()`（推理）与 `act()`（执行）两阶段。
+  - `ToolCallAgent`：ReAct 实现，复用 `allTools[]` 工具集；借助 Spring AI 2.0 `ChatClient` 的自动工具调用循环完成 Function Calling，`think()` 返回 `false`，`act()` 直接取回结果。
+  - `ChenManus`（`@Component`，别名 `yuManus`）：全能助手，注入全部 7 个内置工具，`maxSteps=20`，人设为「可调用各类工具解决任意任务」。
+- **终止机制**：工具集新增 `TerminateTool`，Agent 判断任务完成时会调用它，将状态置为 `FINISHED` 并结束循环。
+- **如何运行**：`ChenManus` 以 Spring Bean 形式存在，可注入后调用 `chenManus.run("你的任务")`。项目内置 `ChenManusTest` 集成测试，演示「以上海静安约会地点 + 网络图片 + PDF 输出」的端到端任务（测试已禁用 MCP 与 Chroma 自动配置）。
+
+> 当前 `ChenManus` 仅作为组件 + 测试存在，尚未暴露为 HTTP 接口；如需对外提供，可在 `LoveAppController` 增加路由。
 
 ## 🔌 MCP 工具集成
 
@@ -282,6 +303,7 @@ server:
 
 ## 🗺 后续扩展方向
 
+- 将 `ChenManus` Agent 暴露为 HTTP 接口（当前仅作为组件 + 测试存在）
 - 接入微信 / 网页前端，把 `LoveApp` 暴露为对话服务
 - 扩充内置知识库与 MCP Server 清单（如天气、日历、数据库查询等）
 - 数据量增大后，将向量库从 Chroma 迁移到 PGVector / Milvus
