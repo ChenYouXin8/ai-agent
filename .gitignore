@@ -1,3 +1,10 @@
+### Docker / 云托管 ###
+# 环境变量（包含真实密钥，不提交）
+.env
+
+# Docker 持久化数据（本地向量库、对话记忆）
+data/
+
 ###custom###
 application-local.yml
 
@@ -9,9 +16,17 @@ mcp-servers.json
 
 # Chroma 向量数据库本地数据
 .chroma/
+chroma.sqlite3
 
 # 临时文件夹
 tmp/
+
+# 运行时日志（不提交）
+*.log
+run.log
+startup.log
+chat_response.json
+
 
 HELP.md
 target/

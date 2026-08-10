@@ -36,6 +36,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Actuator：Docker 健康检查依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>cn.hutool</groupId>
@@ -114,6 +119,11 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+        <!-- ChatMemory + MessageChatMemoryAdvisor（在 spring-ai-client-chat 中，2.0.0 由 BOM 统一管理版本） -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-client-chat</artifactId>
         </dependency>
         <!-- Chroma 向量数据库（持久化，数据存储在 .chroma/ 目录） -->
         <dependency>

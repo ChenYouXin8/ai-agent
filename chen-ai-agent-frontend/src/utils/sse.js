@@ -55,13 +55,46 @@ function extractTokens(line, onToken) {
   if (!trimmed || trimmed.startsWith(':')) return
 
   if (trimmed.startsWith('data:')) {
-    const data = trimmed.slice(5)
+    let data = trimmed.slice(5)
     // 保留 leading space（SSE 规范允许 data: 后有一个空格）
-    const token = data.startsWith(' ') ? data.slice(1) : data
-    if (token && token !== '[DONE]') {
+    if (data.startsWith(' ')) data = data.slice(1)
+
+    if (!data || data === '[DONE]') return
+
+    // 尝试解析 data：如果是 JSON 且有 content 字段，只取 content
+    const token = extractContentFromData(data)
+    if (token) {
       onToken(token)
     }
   } else if (!trimmed.startsWith('event:') && !trimmed.startsWith('id:') && !trimmed.startsWith('retry:')) {
     onToken(trimmed)
   }
+}
+
+/**
+ * 从 SSE data 字符串中提取文本内容
+ * - 如果是 JSON 且包含 content 字段，返回 content
+ * - 如果是结束信号（error 字段），返回 null（忽略）
+ * - 否则返回原数据
+ */
+function extractContentFromData(data) {
+  const firstChar = data.charAt(0)
+  if (firstChar !== '{' && firstChar !== '[') return data
+
+  try {
+    const obj = JSON.parse(data)
+    if (obj && typeof obj === 'object') {
+      // 结束信号：{"error": false/true, "message": "..."}，不输出
+      if ('error' in obj && typeof obj.content !== 'string') {
+        return null
+      }
+      // 正常 token
+      if (typeof obj.content === 'string') {
+        return obj.content
+      }
+    }
+  } catch {
+    // 不是 JSON，按纯文本处理
+  }
+  return data
 }

@@ -1,0 +1,63 @@
+services:
+  # ---------- 1. Chroma 向量数据库 ----------
+  chroma:
+    image: chromadb/chroma:0.5.15
+    container_name: chen-ai-agent-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化向量数据到 ./data/chroma
+      - ./data/chroma:/chroma/chroma/.chromadb
+    environment:
+      # 允许所有来源访问（容器内已绑定 0.0.0.0）
+      IS_PERSISTENT: "TRUE"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ---------- 2. Spring Boot 后端 ----------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chen-ai-agent-backend
+    ports:
+      - "8123:8123"
+    environment:
+      # 通义千问 API Key（必填，替换成你的真实 Key）
+      AI_DASHSCOPE_API_KEY: "${AI_DASHSCOPE_API_KEY}"
+      # 生产鉴权 Token（可选，未设置则跳过鉴权）
+      API_KEY: "${API_KEY:-}"
+      # 搜索引擎 Key（可选，未设置则 WebSearch 不可用）
+      SEARCH_API_KEY: "${SEARCH_API_KEY:-}"
+      # 激活 local profile，加载 application-local.yml
+      SPRING_PROFILES_ACTIVE: "local"
+      # 等待 Chroma 就绪后再启动
+    depends_on:
+      chroma:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      # 挂载对话记忆文件（可选，删除则用容器内内存）
+      - ./data/chat-memory:/app/.chat-memory
+
+  # ---------- 3. Vue 前端（nginx 托管） ----------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: chen-ai-agent-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# ---------- 网络 ----------
+networks:
+  default:
+    name: chen-ai-agent-net

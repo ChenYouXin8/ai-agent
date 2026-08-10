@@ -2,6 +2,6 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export const ENDPOINTS = {
-  loveChat: `${API_BASE}/ai/love_app/chat/sse`,
+  loveChat: `${API_BASE}/ai/love/chat/sse`,
   manusChat: `${API_BASE}/ai/manus/chat`,
 }

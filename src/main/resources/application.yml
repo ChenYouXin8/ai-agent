@@ -15,7 +15,6 @@ spring:
       embedding:
         options:
           model: text-embedding-v3
-    # Chroma 向量数据库配置
     vectorstore:
       chroma:
         collection-name: love-app-knowledge
@@ -23,13 +22,27 @@ spring:
         client:
           host: http://127.0.0.1
           port: 8000
+  security:
+    api-key: ${API_KEY}
 
 server:
   port: 8123
   servlet:
     context-path: /api
 
-# springdoc-openapi 接口文档的配置
+# Actuator（健康检查端点）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  health:
+    chroma:
+      enabled: true
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
@@ -38,15 +51,14 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   group-configs:
-    - group: 'default'
-      paths-to-match: '/**'
+    - group: default
+      paths-to-match: "/**"
       packages-to-scan: io.github.chenyouxin8.chenaiagent.controller
 
-# knife4j 的增强配置
 knife4j:
   enable: true
   setting:
     language: zh_cn
-# searchApi
+
 search-api:
   api-key: ${SEARCH_API_KEY}

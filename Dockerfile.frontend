@@ -1,0 +1,49 @@
+# ========== Stage 1: Build ==========
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# 先拷贝 package.json 利用缓存
+COPY chen-ai-agent-frontend/package*.json ./
+
+RUN npm ci
+
+# 拷贝前端源码
+COPY chen-ai-agent-frontend/ ./
+
+# 构建（VITE_API_BASE 留空，默认 /api，由运行时 nginx 代理）
+RUN npm run build
+
+# ========== Stage 2: Serve ==========
+FROM nginx:alpine
+
+# 删除默认配置
+RUN rm /etc/nginx/conf.d/default.conf
+
+# 拷贝构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 写入 nginx 配置（SPA 路由 + /api 反向代理到后端）
+RUN echo 'server { \
+    listen 80; \
+    server_name _; \
+    root /usr/share/nginx/html; \
+    index index.html; \
+    # SPA 路由 fallback \
+    location / { \
+        try_files $uri $uri/ /index.html; \
+    } \
+    # 代理 API 请求到后端 \
+    location /api/ { \
+        proxy_pass http://backend:8123/api/; \
+        proxy_set_header Host $host; \
+        proxy_set_header X-Real-IP $remote_addr; \
+        # SSE 流式响应需要这两个 header \
+        proxy_buffering off; \
+        proxy_cache off; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
