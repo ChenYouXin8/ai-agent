@@ -36,13 +36,25 @@ public class RequestIdentityService {
 
     public String userId(HttpServletRequest request, String candidate) {
         if (oauth2Enabled) {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication == null || !authentication.isAuthenticated()) {
-                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
-            }
+            Authentication authentication = authenticated();
             return normalize(authentication.getName(), "anonymous");
         }
         return resolve(request, USER_HEADER, candidate, "anonymous");
+    }
+
+    public boolean isAdmin(HttpServletRequest request) {
+        if (!oauth2Enabled) return false;
+        Authentication authentication = authenticated();
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_TENANT_ADMIN".equalsIgnoreCase(authority.getAuthority())
+                        || "ROLE_PLATFORM_ADMIN".equalsIgnoreCase(authority.getAuthority()));
+    }
+
+    public boolean isPlatformAdmin(HttpServletRequest request) {
+        if (!oauth2Enabled) return false;
+        Authentication authentication = authenticated();
+        return authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_PLATFORM_ADMIN".equalsIgnoreCase(authority.getAuthority()));
     }
 
     private String resolve(HttpServletRequest request, String header, String candidate, String fallback) {
@@ -60,10 +72,7 @@ public class RequestIdentityService {
     }
 
     private String requiredJwtClaim(String primary, String secondary) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
-        }
+        Authentication authentication = authenticated();
         Object principal = authentication.getPrincipal();
         if (!(principal instanceof Jwt jwt)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "OAuth2 身份不是有效 JWT");
@@ -71,9 +80,17 @@ public class RequestIdentityService {
         Object value = jwt.getClaim(primary);
         if (value == null || String.valueOf(value).isBlank()) value = jwt.getClaim(secondary);
         if (value == null || String.valueOf(value).isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT 缺少租户标识 claim：" + primary);
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "JWT 缺少租户标识 claim：" + primary);
         }
         return normalize(String.valueOf(value), null);
+    }
+
+    private Authentication authenticated() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
+        }
+        return authentication;
     }
 
     private String normalize(String value, String fallback) {
