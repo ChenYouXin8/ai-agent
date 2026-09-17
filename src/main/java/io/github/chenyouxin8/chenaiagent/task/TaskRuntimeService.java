@@ -15,22 +15,32 @@ import java.util.stream.Collectors;
 public class TaskRuntimeService {
 
     private static final int MAX_RETRIES = 2;
+    private static final int MAX_REVIEW_REPAIR = 1;
 
     private final TaskManager taskManager;
     private final ToolCallback[] tools;
     private final ChatModel chatModel;
     private final LlmPlanner planner;
+    private final TaskReviewerService reviewer;
+    private final TaskMemoryService memoryService;
+    private final ArtifactService artifactService;
 
     public TaskRuntimeService(
             TaskManager taskManager,
             ToolCallback[] tools,
             ChatModel chatModel,
-            LlmPlanner planner
+            LlmPlanner planner,
+            TaskReviewerService reviewer,
+            TaskMemoryService memoryService,
+            ArtifactService artifactService
     ) {
         this.taskManager = taskManager;
         this.tools = tools;
         this.chatModel = chatModel;
         this.planner = planner;
+        this.reviewer = reviewer;
+        this.memoryService = memoryService;
+        this.artifactService = artifactService;
     }
 
     public void start(String taskId) {
@@ -74,35 +84,82 @@ public class TaskRuntimeService {
                 ));
             }
 
-            for (TaskStep step : task.getSteps()) {
-                if (isStopped(task)) return;
-                if (step.getStatus() == StepStatus.COMPLETED || step.getStatus() == StepStatus.SKIPPED) continue;
-
-                taskManager.updateStatus(task, TaskStatus.RUNNING, "执行：" + step.getTitle());
-                boolean success = runStepWithRetry(task, step);
-                if (!success) {
-                    task.setError(step.getError());
-                    taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + step.getTitle());
-                    return;
-                }
-            }
-
+            runPendingSteps(task);
             if (isStopped(task)) return;
 
-            taskManager.updateStatus(task, TaskStatus.REVIEWING, "正在整理并检查执行结果");
+            taskManager.updateStatus(task, TaskStatus.REVIEWING, "Reviewer 正在验收任务结果");
+            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始结果审核"));
+            ReviewDecision decision = reviewer.review(task);
+            task.setReview(decision);
+            taskManager.publish(new TaskEvent(
+                    task.getTaskId(), TaskEventType.REVIEW_COMPLETED, null,
+                    decision.feedback() == null ? "审核完成" : decision.feedback()
+            ));
+
+            if (!decision.passed()) {
+                TaskStep repairStep = createRepairStep(task, decision);
+                boolean repaired = runStepWithRetry(task, repairStep);
+                if (!repaired) {
+                    task.setError("审核未通过且自动补救失败：" + safe(decision.missingItems(), decision.feedback()));
+                    memoryService.remember(task);
+                    taskManager.updateStatus(task, TaskStatus.FAILED, task.getError());
+                    return;
+                }
+
+                taskManager.updateStatus(task, TaskStatus.REVIEWING, "补救步骤完成，Reviewer 正在二次验收");
+                taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始二次审核"));
+                decision = reviewer.review(task);
+                task.setReview(decision);
+                taskManager.publish(new TaskEvent(
+                        task.getTaskId(), TaskEventType.REVIEW_COMPLETED, null,
+                        decision.feedback() == null ? "二次审核完成" : decision.feedback()
+                ));
+            }
+
             task.setResult(task.getSteps().stream()
                     .map(TaskStep::getOutput)
                     .filter(output -> output != null && !output.isBlank())
                     .collect(Collectors.joining("\n\n")));
-            taskManager.updateStatus(task, TaskStatus.COMPLETED, "任务完成");
+
+            if (!decision.passed()) {
+                task.setError("Reviewer 未通过：" + safe(decision.missingItems(), decision.feedback()));
+                memoryService.remember(task);
+                taskManager.updateStatus(task, TaskStatus.FAILED, task.getError());
+                return;
+            }
+
+            memoryService.remember(task);
+            taskManager.updateStatus(task, TaskStatus.COMPLETED, "任务完成并通过审核");
         } catch (Exception e) {
             task.setError(e.getMessage());
+            memoryService.remember(task);
             taskManager.updateStatus(task, TaskStatus.FAILED, "任务失败：" + e.getMessage());
         }
     }
 
+    private void runPendingSteps(ChenTask task) {
+        for (TaskStep step : task.getSteps()) {
+            if (isStopped(task)) return;
+            if (step.getStatus() == StepStatus.COMPLETED || step.getStatus() == StepStatus.SKIPPED) continue;
+
+            taskManager.updateStatus(task, TaskStatus.RUNNING, "执行：" + step.getTitle());
+            boolean success = runStepWithRetry(task, step);
+            if (!success) {
+                task.setError(step.getError());
+                taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + step.getTitle());
+                return;
+            }
+        }
+    }
+
     private void createPlan(ChenTask task) {
-        Plan plan = planner.createPlan(task.getPrompt());
+        String memoryContext = memoryService.recallContext(task.getPrompt(), 3);
+        String planningPrompt = task.getPrompt();
+        if (!memoryContext.isBlank()) {
+            planningPrompt += "\n\n以下是与当前任务可能相关的历史任务记忆，仅用于避免重复工作和参考成功做法：\n" + memoryContext;
+        }
+
+        Plan plan = planner.createPlan(planningPrompt);
         task.setTitle(plan.title());
         task.setPlanSummary(plan.summary());
         for (PlanStep planStep : plan.steps()) {
@@ -124,6 +181,24 @@ public class TaskRuntimeService {
             ));
         }
         task.touch();
+    }
+
+    private TaskStep createRepairStep(ChenTask task, ReviewDecision decision) {
+        int sequence = task.getSteps().size() + 1;
+        String missing = safe(decision.missingItems(), "补足审核发现的缺失内容");
+        String feedback = safe(decision.feedback(), "重新检查并修正最终结果");
+        TaskStep repairStep = new TaskStep(
+                task.getTaskId() + "_step_" + sequence,
+                sequence,
+                "补救与修正",
+                "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback
+        );
+        task.getSteps().add(repairStep);
+        taskManager.publish(new TaskEvent(
+                task.getTaskId(), TaskEventType.STEP_PLANNED,
+                repairStep.getStepId(), repairStep.getTitle()
+        ));
+        return repairStep;
     }
 
     private boolean runStepWithRetry(ChenTask task, TaskStep step) {
@@ -165,6 +240,7 @@ public class TaskRuntimeService {
             step.setOutput(output);
             step.setStatus(StepStatus.COMPLETED);
             step.setError(null);
+            artifactService.capture(task, output, taskManager);
             taskManager.publish(new TaskEvent(
                     task.getTaskId(), TaskEventType.STEP_COMPLETED,
                     step.getStepId(), output
