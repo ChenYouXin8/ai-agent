@@ -46,6 +46,11 @@ public class RequestIdentityService {
                         || "ROLE_PLATFORM_ADMIN".equalsIgnoreCase(authority.getAuthority()));
     }
 
+    // legacy 模式整体 permitAll（无任何鉴权），审批入口若仍要求管理员会永久卡死 WAITING_USER 任务
+    public boolean canApprove(HttpServletRequest request) {
+        return !oauth2Enabled || isAdmin(request);
+    }
+
     public boolean isPlatformAdmin(HttpServletRequest request) {
         if (!oauth2Enabled) return false;
         return authenticated().getAuthorities().stream()

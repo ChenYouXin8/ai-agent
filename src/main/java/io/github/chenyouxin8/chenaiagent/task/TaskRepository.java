@@ -10,6 +10,15 @@ import java.util.stream.Collectors;
 @Repository
 public class TaskRepository {
 
+    private static final String TASK_COLUMNS = """
+            task_id, prompt, title, status, created_at, updated_at,
+            started_at, completed_at, duration_ms,
+            estimated_input_tokens, estimated_output_tokens,
+            actual_input_tokens, actual_output_tokens, model_call_count, estimated_cost,
+            result, error, plan_summary, tenant_id, owner_id, session_id, priority,
+            review_passed, review_feedback, review_missing_items
+            """;
+
     private final JdbcTemplate jdbc;
 
     public TaskRepository(JdbcTemplate jdbc) {
@@ -17,17 +26,21 @@ public class TaskRepository {
     }
 
     public List<ChenTask> findAll() {
-        List<ChenTask> tasks = jdbc.query("""
-                SELECT task_id, prompt, title, status, created_at, updated_at,
-                       started_at, completed_at, duration_ms,
-                       estimated_input_tokens, estimated_output_tokens,
-                       actual_input_tokens, actual_output_tokens, model_call_count, estimated_cost,
-                       result, error, plan_summary, tenant_id, owner_id, session_id, priority,
-                       review_passed, review_feedback, review_missing_items
-                FROM chen_tasks ORDER BY created_at DESC
-                """, taskRowMapper());
+        List<ChenTask> tasks = jdbc.query(
+                "SELECT " + TASK_COLUMNS + " FROM chen_tasks ORDER BY created_at DESC",
+                taskRowMapper());
         for (ChenTask task : tasks) loadChildren(task);
         return tasks;
+    }
+
+    public ChenTask find(String taskId) {
+        List<ChenTask> tasks = jdbc.query(
+                "SELECT " + TASK_COLUMNS + " FROM chen_tasks WHERE task_id = ?",
+                taskRowMapper(), taskId);
+        if (tasks.isEmpty()) return null;
+        ChenTask task = tasks.get(0);
+        loadChildren(task);
+        return task;
     }
 
     public List<TaskEvent> findEvents(String taskId, int limit) {

@@ -89,6 +89,44 @@ class RequestIdentityServiceTest {
     }
 
     @Test
+    void legacyModeAllowsApproval() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy");
+        assertTrue(service.canApprove(new MockHttpServletRequest()));
+    }
+
+    @Test
+    void oauth2ModeBlocksApprovalWithoutAdminRole() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("normal-user")
+                .claim("tenant_id", "tenant-a")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+
+        assertFalse(service.canApprove(new MockHttpServletRequest()));
+    }
+
+    @Test
+    void oauth2ModeAllowsApprovalForTenantAdmin() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("admin-user")
+                .claim("tenant_id", "tenant-a")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
+                jwt,
+                List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
+
+        assertTrue(service.canApprove(new MockHttpServletRequest()));
+    }
+
+    @Test
     void oauth2ModeRejectsJwtWithoutTenantClaim() {
         RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
         Jwt jwt = Jwt.withTokenValue("token")

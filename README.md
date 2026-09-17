@@ -8,6 +8,10 @@
 
 Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：服务端可按步骤类型和风险关键词强制要求人工确认。审批前步骤保持 `PENDING`，任务进入 `WAITING_USER`；批准会在同一事务内将步骤置为 `APPROVED`、任务置为 `QUEUED`，并记录 `TASK_APPROVAL_GRANTED` 与 `TASK_QUEUED`；驳回会将步骤置为 `REJECTED`、任务置为 `CANCELLED`，并记录对应审批/取消事件。
 
+事务语义：批准产生的重新入队发生在事务**提交之后**（`afterCompletion` 回调），事务回滚时不会入队，且内存中的任务状态会自动从数据库恢复，避免 worker 消费回滚后的脏状态。
+
+审批权限：`CHENMANUS_SECURITY_MODE=oauth2` 时仅 `TENANT_ADMIN` / `PLATFORM_ADMIN` 可审批；legacy 模式整体无鉴权（permitAll），审批接口同样放行。
+
 审计历史：
 
 `GET /api/tasks/{taskId}/events/history?limit=200&from=...&to=...&types=TASK_APPROVAL_GRANTED,TASK_CANCELLED&stepId=...`

@@ -46,6 +46,14 @@ public class TaskManager {
         return task;
     }
 
+    // 事务回滚后内存中的聚合已被业务代码修改，用数据库状态覆盖，避免脏状态被后续读消费
+    public void reload(String taskId) {
+        try {
+            ChenTask task = repository.find(taskId);
+            if (task != null) tasks.put(taskId, task);
+        } catch (RuntimeException ignored) { }
+    }
+
     public List<ChenTask> list() { return list(null, null, null); }
     public List<ChenTask> list(String ownerId, String sessionId) { return list(null, ownerId, sessionId); }
 

@@ -149,7 +149,7 @@ public class TaskController {
     }
 
     private void requireApprovalAdmin(HttpServletRequest request) {
-        if (!identityService.isAdmin(request)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前身份没有人工审批权限");
+        if (!identityService.canApprove(request)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "当前身份没有人工审批权限");
     }
 
     private ChenTask authorize(String taskId, String tenantId, String userId, HttpServletRequest request) {
