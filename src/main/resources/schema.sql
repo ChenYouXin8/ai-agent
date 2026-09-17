@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS chen_task_steps (
     retry_count INT NOT NULL DEFAULT 0,
     parallelizable BOOLEAN NOT NULL DEFAULT FALSE,
     depends_on VARCHAR(255) NOT NULL DEFAULT '',
+    approval_status VARCHAR(16) NOT NULL DEFAULT 'NONE',
+    approval_note TEXT,
     estimated_input_tokens BIGINT NOT NULL DEFAULT 0,
     estimated_output_tokens BIGINT NOT NULL DEFAULT 0,
     actual_input_tokens BIGINT NOT NULL DEFAULT 0,
@@ -69,6 +71,8 @@ CREATE TABLE IF NOT EXISTS chen_task_steps (
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS duration_ms BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS parallelizable BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS depends_on VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS approval_status VARCHAR(16) NOT NULL DEFAULT 'NONE';
+ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS approval_note TEXT;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS estimated_input_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS estimated_output_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS actual_input_tokens BIGINT NOT NULL DEFAULT 0;
@@ -93,3 +97,16 @@ ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS version INT NOT NULL DE
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS media_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream';
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS checksum VARCHAR(128);
+
+CREATE TABLE IF NOT EXISTS chen_task_events (
+    event_id VARCHAR(64) PRIMARY KEY,
+    task_id VARCHAR(64) NOT NULL,
+    type VARCHAR(64) NOT NULL,
+    step_id VARCHAR(128),
+    message TEXT,
+    created_at BIGINT NOT NULL,
+    CONSTRAINT fk_task_event_task FOREIGN KEY (task_id) REFERENCES chen_tasks(task_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chen_task_events_task_time
+    ON chen_task_events(task_id, created_at);
