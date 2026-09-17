@@ -59,15 +59,15 @@ public class TaskRepository {
 
     public List<TaskEvent> findEvents(String taskId, int limit) {
         int max = Math.max(1, Math.min(limit, 500));
-        return jdbc.query("""
+        List<TaskEvent> events = jdbc.query("""
                 SELECT event_id, task_id, type, step_id, message, created_at
                 FROM chen_task_events
                 WHERE task_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, seq DESC
                 LIMIT ?
-                """, taskEventRowMapper(), taskId, max).stream()
-                .sorted(java.util.Comparator.comparingLong(TaskEvent::getTimestamp))
-                .toList();
+                """, taskEventRowMapper(), taskId, max);
+        Collections.reverse(events);
+        return events;
     }
 
     // 审计查询：过滤条件必须先于 LIMIT 在数据库执行；若先取最近 500 条再内存过滤，
@@ -92,7 +92,8 @@ public class TaskRepository {
             sql.append(" AND step_id = ?");
             params.add(query.stepId());
         }
-        sql.append(" ORDER BY created_at DESC LIMIT ?");
+        // seq 为自增次序键：同毫秒事件按插入顺序返回，时间戳不再是唯一的排序依据
+        sql.append(" ORDER BY created_at DESC, seq DESC LIMIT ?");
         params.add(query.limit());
 
         List<TaskEvent> events = jdbc.query(sql.toString(), taskEventRowMapper(), params.toArray());

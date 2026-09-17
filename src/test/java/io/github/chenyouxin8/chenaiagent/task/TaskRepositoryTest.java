@@ -3,6 +3,7 @@ package io.github.chenyouxin8.chenaiagent.task;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -225,6 +226,48 @@ class TaskRepositoryTest {
         assertNotNull(guarded);
         assertEquals(Propagation.REQUIRED, plain.propagation());
         assertEquals(Propagation.REQUIRED, guarded.propagation());
+    }
+
+    @Test
+    void sameMillisecondEventsKeepInsertionOrder() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_seq_order_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
+        repository.save(new ChenTask("task_seq_order", "顺序"));
+        repository.appendEvent(new TaskEvent("e_t500", "task_seq_order", TaskEventType.MESSAGE, null, "先发生", 500L));
+        repository.appendEvent(new TaskEvent("e_a", "task_seq_order", TaskEventType.MESSAGE, null, "同毫秒第一条", 1000L));
+        repository.appendEvent(new TaskEvent("e_b", "task_seq_order", TaskEventType.MESSAGE, null, "同毫秒第二条", 1000L));
+        repository.appendEvent(new TaskEvent("e_c", "task_seq_order", TaskEventType.MESSAGE, null, "同毫秒第三条", 1000L));
+        repository.appendEvent(new TaskEvent("e_t1500", "task_seq_order", TaskEventType.MESSAGE, null, "最后发生", 1500L));
+
+        List<String> expected = List.of("e_t500", "e_a", "e_b", "e_c", "e_t1500");
+        assertEquals(expected, repository.findEvents("task_seq_order", 10).stream().map(TaskEvent::getEventId).toList());
+        assertEquals(expected, repository.findEvents("task_seq_order",
+                new TaskAuditQuery(500, 0L, Long.MAX_VALUE, List.of(), null)).stream().map(TaskEvent::getEventId).toList());
+
+        // limit 取最近 N 条：t=1500 与同毫秒中最晚插入的 e_c
+        assertEquals(List.of("e_c", "e_t1500"), repository.findEvents("task_seq_order", 2).stream()
+                .map(TaskEvent::getEventId).toList());
+    }
+
+    @Test
+    void deleteTaskWithEventsIsRejectedToPreserveAuditTrail() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_delete_restrict_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
+        repository.save(new ChenTask("task_restrict", "审计保留"));
+        repository.appendEvent(new TaskEvent("e_keep", "task_restrict", TaskEventType.TASK_CREATED, null, "任务已创建", 1L));
+
+        assertThrows(DataAccessException.class, () -> repository.delete("task_restrict"));
+        assertNotNull(repository.find("task_restrict"));
     }
 
     @Test

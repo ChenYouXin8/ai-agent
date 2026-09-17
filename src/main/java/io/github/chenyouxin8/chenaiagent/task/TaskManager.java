@@ -24,10 +24,11 @@ public class TaskManager {
         for (int i = 0; i < SAVE_LOCK_STRIPES; i++) saveLocks[i] = new ReentrantLock();
     }
 
+    // 启动时 DB 不可用必须让应用启动失败：静默吞掉会让内存缓存为空（已有任务全部 404），
+    // 而 quota 等路径直接读库，两套数据源从此分叉
     @PostConstruct
     public void restore() {
-        try { repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task)); }
-        catch (Exception ignored) { }
+        repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task));
     }
 
     public ChenTask create(String prompt) { return create(prompt, "default", "anonymous", "default", TaskPriority.NORMAL); }

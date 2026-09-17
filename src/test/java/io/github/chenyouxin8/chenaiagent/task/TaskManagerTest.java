@@ -16,6 +16,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TaskManagerTest {
 
@@ -78,5 +79,26 @@ class TaskManagerTest {
 
         verify(repository, times(50)).save(any(ChenTask.class));
         assertEquals(1, maxInFlight.get());
+    }
+
+    @Test
+    void restoreLoadsPersistedTasksIntoMemory() {
+        TaskRepository repository = mock(TaskRepository.class);
+        ChenTask task = new ChenTask("task_restore", "恢复");
+        when(repository.findAll()).thenReturn(List.of(task));
+        TaskManager manager = new TaskManager(repository);
+
+        manager.restore();
+
+        assertEquals(task, manager.get("task_restore"));
+    }
+
+    @Test
+    void restorePropagatesRepositoryFailure() {
+        TaskRepository repository = mock(TaskRepository.class);
+        when(repository.findAll()).thenThrow(new IllegalStateException("数据库不可用"));
+        TaskManager manager = new TaskManager(repository);
+
+        assertThrows(IllegalStateException.class, manager::restore);
     }
 }
