@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS chen_task_steps (
     started_at BIGINT NOT NULL,
     completed_at BIGINT NOT NULL,
     retry_count INT NOT NULL,
+    parallelizable BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_task_step_task FOREIGN KEY (task_id) REFERENCES chen_tasks(task_id) ON DELETE CASCADE
 );
 
