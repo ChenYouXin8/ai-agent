@@ -11,4 +11,6 @@ export const ENDPOINTS = {
   taskResume: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/resume${query}`,
   taskCancel: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/cancel${query}`,
   artifact: (taskId, artifactId, query = '') => `${API_BASE}/tasks/${taskId}/artifacts/${artifactId}/download${query}`,
+  artifactPreview: (taskId, artifactId, query = '') => `${API_BASE}/tasks/${taskId}/artifacts/${artifactId}/preview${query}`,
+  quota: (query = '') => `${API_BASE}/tasks/quota${query}`,
 }
