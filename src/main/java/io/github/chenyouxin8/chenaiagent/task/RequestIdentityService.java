@@ -3,6 +3,9 @@ package io.github.chenyouxin8.chenaiagent.task;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,20 +17,33 @@ public class RequestIdentityService {
 
     private final boolean trustIdentityHeaders;
     private final boolean requireIdentityHeaders;
+    private final boolean oauth2Enabled;
 
     public RequestIdentityService(
             @Value("${chenmanus.security.trust-identity-headers:false}") boolean trustIdentityHeaders,
-            @Value("${chenmanus.security.require-identity-headers:false}") boolean requireIdentityHeaders
+            @Value("${chenmanus.security.require-identity-headers:false}") boolean requireIdentityHeaders,
+            @Value("${chenmanus.security.mode:legacy}") String securityMode
     ) {
         this.trustIdentityHeaders = trustIdentityHeaders;
         this.requireIdentityHeaders = requireIdentityHeaders;
+        this.oauth2Enabled = "oauth2".equalsIgnoreCase(securityMode);
     }
 
     public String tenantId(HttpServletRequest request, String candidate) {
+        if (oauth2Enabled) {
+            return jwtClaim("tenant_id", "tenant", "default");
+        }
         return resolve(request, TENANT_HEADER, candidate, "default");
     }
 
     public String userId(HttpServletRequest request, String candidate) {
+        if (oauth2Enabled) {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
+            }
+            return normalize(authentication.getName(), "anonymous");
+        }
         return resolve(request, USER_HEADER, candidate, "anonymous");
     }
 
@@ -43,6 +59,20 @@ public class RequestIdentityService {
             }
         }
         return normalize(candidate, fallback);
+    }
+
+    private String jwtClaim(String primary, String secondary, String fallback) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof Jwt jwt) {
+            Object value = jwt.getClaim(primary);
+            if (value == null || String.valueOf(value).isBlank()) value = jwt.getClaim(secondary);
+            return normalize(value == null ? null : String.valueOf(value), fallback);
+        }
+        return fallback;
     }
 
     private String normalize(String value, String fallback) {
