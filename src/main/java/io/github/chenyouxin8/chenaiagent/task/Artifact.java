@@ -16,6 +16,7 @@ public class Artifact implements Serializable {
     private int version = 1;
     private long sizeBytes;
     private String mediaType = "application/octet-stream";
+    private String checksum;
 
     public Artifact(String artifactId, String name, String type, String path) {
         this(artifactId, name, type, path, System.currentTimeMillis());
