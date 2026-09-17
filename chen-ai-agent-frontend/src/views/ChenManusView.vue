@@ -62,9 +62,10 @@ function connectEvents(id) {
   eventSource = new EventSource(ENDPOINTS.taskEvents(id, scopeQuery()))
   const eventNames = [
     'task_created', 'task_queued', 'plan_created', 'step_planned', 'step_started',
-    'step_retry', 'step_completed', 'step_failed', 'tool_started', 'tool_completed',
-    'tool_failed', 'metrics_updated', 'artifact_created', 'review_started', 'review_completed',
-    'task_paused', 'task_resumed', 'task_cancelled', 'task_completed', 'task_failed'
+    'step_retry', 'step_completed', 'step_failed', 'agent_handoff',
+    'tool_started', 'tool_completed', 'tool_failed', 'metrics_updated', 'artifact_created',
+    'review_started', 'review_completed', 'task_paused', 'task_resumed', 'task_cancelled',
+    'task_completed', 'task_failed', 'task_dead_lettered'
   ]
   eventNames.forEach((name) => {
     eventSource.addEventListener(name, async (message) => {
@@ -138,10 +139,10 @@ function eventLabel(type) {
   return {
     task_created: 'TASK', task_queued: 'QUEUE', plan_created: 'PLAN', step_planned: 'PLAN STEP',
     step_started: 'STEP', step_retry: 'RETRY', step_completed: 'STEP OK', step_failed: 'STEP ERROR',
-    tool_started: 'TOOL START', tool_completed: 'TOOL OK', tool_failed: 'TOOL ERROR',
+    agent_handoff: 'A2A HANDOFF', tool_started: 'TOOL START', tool_completed: 'TOOL OK', tool_failed: 'TOOL ERROR',
     metrics_updated: 'METRICS', artifact_created: 'ARTIFACT', review_started: 'REVIEW',
     review_completed: 'REVIEW OK', task_paused: 'PAUSE', task_resumed: 'RESUME',
-    task_cancelled: 'CANCEL', task_completed: 'DONE', task_failed: 'FAILED',
+    task_cancelled: 'CANCEL', task_completed: 'DONE', task_failed: 'FAILED', task_dead_lettered: 'DLQ',
   }[type] || type
 }
 
@@ -181,7 +182,7 @@ onBeforeUnmount(() => eventSource?.close())
 <template>
   <div class="cm">
     <aside class="side">
-      <div class="logo"><b>✦</b><span>ChenManus <i>2.6</i></span></div>
+      <div class="logo"><b>✦</b><span>ChenManus <i>2.8</i></span></div>
       <button class="new" @click="newTask">＋ 新建任务</button>
       <small class="label">租户 / 会话</small>
       <div class="scope"><span>{{ tenantId }}</span><span>{{ sessionId.slice(0, 8) }}…</span></div>
@@ -193,12 +194,12 @@ onBeforeUnmount(() => eventSource?.close())
 
     <main class="main">
       <header>
-        <div><small>AGENT WORKSPACE · TENANT {{ tenantId }}</small><h1>{{ current?.title || 'ChenManus 2.6' }}</h1></div>
+        <div><small>AGENT WORKSPACE · TENANT {{ tenantId }}</small><h1>{{ current?.title || 'ChenManus 2.8' }}</h1></div>
         <router-link to="/">返回</router-link>
       </header>
 
       <section v-if="!current" class="empty">
-        <div>✦</div><h2>把任务交给 ChenManus</h2><p>DAG · Redis Queue · 并行 Agent · Reviewer · Usage · Artifact</p>
+        <div>✦</div><h2>把任务交给 ChenManus</h2><p>DAG · Team Handoff · Redis Queue · Reviewer · Usage · Artifact</p>
         <div class="chips">
           <button @click="prompt='研究 AI Agent 最近的发展并整理成报告'">研究主题</button>
           <button @click="prompt='分析这个 Java 项目的代码问题'">分析代码</button>
