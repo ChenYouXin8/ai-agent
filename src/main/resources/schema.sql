@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS chen_tasks (
     result TEXT,
     error TEXT,
     plan_summary TEXT,
-    owner_id VARCHAR(128) NOT NULL,
-    session_id VARCHAR(128) NOT NULL,
+    tenant_id VARCHAR(128) NOT NULL DEFAULT 'default',
+    owner_id VARCHAR(128) NOT NULL DEFAULT 'anonymous',
+    session_id VARCHAR(128) NOT NULL DEFAULT 'default',
+    priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL',
     review_passed BOOLEAN,
     review_feedback TEXT,
     review_missing_items TEXT
@@ -27,8 +29,10 @@ ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS duration_ms BIGINT NOT NULL DEFA
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_input_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_output_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(128) NOT NULL DEFAULT 'default';
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS owner_id VARCHAR(128) NOT NULL DEFAULT 'anonymous';
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS session_id VARCHAR(128) NOT NULL DEFAULT 'default';
+ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL';
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS review_passed BOOLEAN;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS review_feedback TEXT;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS review_missing_items TEXT;
@@ -66,5 +70,12 @@ CREATE TABLE IF NOT EXISTS chen_task_artifacts (
     type VARCHAR(32) NOT NULL,
     path TEXT NOT NULL,
     created_at BIGINT NOT NULL,
+    version INT NOT NULL DEFAULT 1,
+    size_bytes BIGINT NOT NULL DEFAULT 0,
+    media_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream',
     CONSTRAINT fk_task_artifact_task FOREIGN KEY (task_id) REFERENCES chen_tasks(task_id) ON DELETE CASCADE
 );
+
+ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
+ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS media_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream';
