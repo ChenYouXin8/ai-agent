@@ -30,6 +30,19 @@ public class TaskRepository {
         return tasks;
     }
 
+    public List<TaskEvent> findEvents(String taskId, int limit) {
+        int max = Math.max(1, Math.min(limit, 500));
+        return jdbc.query("""
+                SELECT event_id, task_id, type, step_id, message, created_at
+                FROM chen_task_events
+                WHERE task_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, taskEventRowMapper(), taskId, max).stream()
+                .sorted(java.util.Comparator.comparingLong(TaskEvent::getTimestamp))
+                .toList();
+    }
+
     public int countActiveTasks(String tenantId) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM chen_tasks
@@ -87,15 +100,16 @@ public class TaskRepository {
                     INSERT INTO chen_task_steps (
                         step_id, task_id, seq, title, description, status,
                         output, error, started_at, completed_at, duration_ms,
-                        retry_count, parallelizable, depends_on,
+                        retry_count, parallelizable, depends_on, approval_status, approval_note,
                         estimated_input_tokens, estimated_output_tokens,
                         actual_input_tokens, actual_output_tokens, model_call_count
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     step.getStepId(), task.getTaskId(), step.getSequence(), step.getTitle(), step.getDescription(),
                     step.getStatus().name(), step.getOutput(), step.getError(), step.getStartedAt(),
                     step.getCompletedAt(), step.getDurationMs(), step.getRetryCount(), step.isParallelizable(),
-                    encodeDependencies(step.getDependsOn()), step.getEstimatedInputTokens(), step.getEstimatedOutputTokens(),
+                    encodeDependencies(step.getDependsOn()), step.getApprovalStatus().name(), step.getApprovalNote(),
+                    step.getEstimatedInputTokens(), step.getEstimatedOutputTokens(),
                     step.getActualInputTokens(), step.getActualOutputTokens(), step.getModelCallCount());
         }
 
@@ -113,6 +127,15 @@ public class TaskRepository {
         }
     }
 
+    public void appendEvent(TaskEvent event) {
+        jdbc.update("""
+                INSERT INTO chen_task_events (event_id, task_id, type, step_id, message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                event.getEventId(), event.getTaskId(), event.getType().name(), event.getStepId(),
+                event.getMessage(), event.getTimestamp());
+    }
+
     public void delete(String taskId) {
         jdbc.update("DELETE FROM chen_tasks WHERE task_id = ?", taskId);
     }
@@ -121,7 +144,8 @@ public class TaskRepository {
         task.getSteps().addAll(jdbc.query("""
                 SELECT step_id, seq, title, description, status, output, error,
                        started_at, completed_at, duration_ms, retry_count,
-                       parallelizable, depends_on, estimated_input_tokens, estimated_output_tokens,
+                       parallelizable, depends_on, approval_status, approval_note,
+                       estimated_input_tokens, estimated_output_tokens,
                        actual_input_tokens, actual_output_tokens, model_call_count
                 FROM chen_task_steps WHERE task_id = ? ORDER BY seq
                 """, taskStepRowMapper(), task.getTaskId()));
@@ -167,7 +191,8 @@ public class TaskRepository {
         return (rs, rowNum) -> {
             TaskStep step = new TaskStep(
                     rs.getString("step_id"), rs.getInt("seq"), rs.getString("title"),
-                    rs.getString("description"), rs.getBoolean("parallelizable"), decodeDependencies(rs.getString("depends_on")));
+                    rs.getString("description"), rs.getBoolean("parallelizable"), decodeDependencies(rs.getString("depends_on")),
+                    ApprovalStatus.valueOf(rs.getString("approval_status")));
             step.setStatus(StepStatus.valueOf(rs.getString("status")));
             step.setOutput(rs.getString("output"));
             step.setError(rs.getString("error"));
@@ -175,6 +200,7 @@ public class TaskRepository {
             step.setCompletedAt(rs.getLong("completed_at"));
             step.setDurationMs(rs.getLong("duration_ms"));
             step.setRetryCount(rs.getInt("retry_count"));
+            step.setApprovalNote(rs.getString("approval_note"));
             step.setEstimatedInputTokens(rs.getLong("estimated_input_tokens"));
             step.setEstimatedOutputTokens(rs.getLong("estimated_output_tokens"));
             step.setActualInputTokens(rs.getLong("actual_input_tokens"));
@@ -195,6 +221,16 @@ public class TaskRepository {
             artifact.setChecksum(rs.getString("checksum"));
             return artifact;
         };
+    }
+
+    private RowMapper<TaskEvent> taskEventRowMapper() {
+        return (rs, rowNum) -> new TaskEvent(
+                rs.getString("event_id"),
+                rs.getString("task_id"),
+                TaskEventType.valueOf(rs.getString("type")),
+                rs.getString("step_id"),
+                rs.getString("message"),
+                rs.getLong("created_at"));
     }
 
     private String encodeDependencies(List<Integer> dependencies) {
