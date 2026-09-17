@@ -4,8 +4,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.List;
 
 @Repository
@@ -28,7 +26,7 @@ public class TaskRepository {
         return tasks;
     }
 
-    public void save(ChenTask task) {
+    public synchronized void save(ChenTask task) {
         jdbc.update("""
                 MERGE INTO chen_tasks (
                     task_id, prompt, title, status, created_at, updated_at, result, error,
@@ -48,12 +46,12 @@ public class TaskRepository {
             jdbc.update("""
                     INSERT INTO chen_task_steps (
                         step_id, task_id, seq, title, description, status,
-                        output, error, started_at, completed_at, retry_count
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        output, error, started_at, completed_at, retry_count, parallelizable
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     step.getStepId(), task.getTaskId(), step.getSequence(), step.getTitle(), step.getDescription(),
                     step.getStatus().name(), step.getOutput(), step.getError(), step.getStartedAt(),
-                    step.getCompletedAt(), step.getRetryCount());
+                    step.getCompletedAt(), step.getRetryCount(), step.isParallelizable());
         }
 
         jdbc.update("DELETE FROM chen_task_artifacts WHERE task_id = ?", task.getTaskId());
@@ -72,18 +70,16 @@ public class TaskRepository {
     }
 
     private void loadChildren(ChenTask task) {
-        List<TaskStep> steps = jdbc.query("""
+        task.getSteps().addAll(jdbc.query("""
                 SELECT step_id, seq, title, description, status, output, error,
-                       started_at, completed_at, retry_count
+                       started_at, completed_at, retry_count, parallelizable
                 FROM chen_task_steps WHERE task_id = ? ORDER BY seq
-                """, taskStepRowMapper(), task.getTaskId());
-        task.getSteps().addAll(steps);
+                """, taskStepRowMapper(), task.getTaskId()));
 
-        List<Artifact> artifacts = jdbc.query("""
+        task.getArtifacts().addAll(jdbc.query("""
                 SELECT artifact_id, name, type, path, created_at
                 FROM chen_task_artifacts WHERE task_id = ? ORDER BY created_at
-                """, artifactRowMapper(), task.getTaskId());
-        task.getArtifacts().addAll(artifacts);
+                """, artifactRowMapper(), task.getTaskId()));
     }
 
     private RowMapper<ChenTask> taskRowMapper() {
@@ -112,7 +108,8 @@ public class TaskRepository {
                     rs.getString("step_id"),
                     rs.getInt("seq"),
                     rs.getString("title"),
-                    rs.getString("description")
+                    rs.getString("description"),
+                    rs.getBoolean("parallelizable")
             );
             step.setStatus(StepStatus.valueOf(rs.getString("status")));
             step.setOutput(rs.getString("output"));
