@@ -172,7 +172,7 @@ public class TaskController {
         emitter.onTimeout(() -> taskManager.unsubscribe(taskId, listener));
         try {
             emitter.send(SseEmitter.event().name("connected")
-                    .data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.7 实时事件流")));
+                    .data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.8 实时事件流")));
         } catch (IOException e) {
             emitter.completeWithError(e);
         }
