@@ -18,9 +18,11 @@ public class TaskReviewerService {
             """;
 
     private final ChatClient chatClient;
+    private final TaskMetricsService metricsService;
 
-    public TaskReviewerService(ChatModel chatModel) {
+    public TaskReviewerService(ChatModel chatModel, TaskMetricsService metricsService) {
         this.chatClient = ChatClient.builder(chatModel).build();
+        this.metricsService = metricsService;
     }
 
     public ReviewDecision review(ChenTask task) {
@@ -40,11 +42,20 @@ public class TaskReviewerService {
                 """.formatted(task.getPrompt(), outputs.isBlank() ? "（没有有效执行结果）" : outputs);
 
         try {
-            ReviewDecision decision = chatClient.prompt()
+            var responseSpec = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user(prompt)
-                    .call()
-                    .entity(ReviewDecision.class, spec -> spec.validateSchema());
+                    .call();
+            ReviewDecision decision = responseSpec.entity(ReviewDecision.class, spec -> spec.validateSchema());
+            var response = responseSpec.chatResponse();
+            if (response != null && response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                metricsService.recordActualUsage(
+                        task,
+                        usage.getPromptTokens() == null ? 0L : usage.getPromptTokens(),
+                        usage.getCompletionTokens() == null ? 0L : usage.getCompletionTokens(),
+                        1L);
+            }
             return decision == null ? ReviewDecision.fallback("审核器未返回结果") : decision;
         } catch (Exception e) {
             return ReviewDecision.fallback("审核器暂不可用，已完成基础结果检查");
