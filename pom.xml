@@ -6,7 +6,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.1.0</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
     <groupId>io.github.ChenYouXin8</groupId>
     <artifactId>chen-ai-agent</artifactId>
@@ -14,18 +14,9 @@
     <name>chen-ai-agent</name>
     <description>chen-ai-agent</description>
     <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+    <licenses><license/></licenses>
+    <developers><developer/></developers>
+    <scm><connection/><developerConnection/><tag/><url/></scm>
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>2.0.0</spring-ai.version>
@@ -36,10 +27,19 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-        <!-- Actuator：Docker 健康检查依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- ChenManus durable task store -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -63,7 +63,6 @@
             <optional>true</optional>
             <version>1.18.46</version>
         </dependency>
-        <!-- 支持结构化输出（兼容 Spring AI 2.0.0 的 Jackson 3.x） -->
         <dependency>
             <groupId>com.github.victools</groupId>
             <artifactId>jsonschema-generator</artifactId>
@@ -74,14 +73,12 @@
             <artifactId>kryo</artifactId>
             <version>5.6.2</version>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/com.itextpdf/itext-core -->
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>itext-core</artifactId>
             <version>9.1.0</version>
             <type>pom</type>
         </dependency>
-        <!-- https://mvnrepository.com/artifact/com.itextpdf/font-asian -->
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>font-asian</artifactId>
@@ -92,7 +89,6 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
@@ -115,23 +111,19 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- DashScope 通义千问模型（openai starter + DashScope base-url 配置） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
-        <!-- ChatMemory + MessageChatMemoryAdvisor（在 spring-ai-client-chat 中，2.0.0 由 BOM 统一管理版本） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-client-chat</artifactId>
         </dependency>
-        <!-- Chroma 向量数据库（持久化，数据存储在 .chroma/ 目录） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-chroma</artifactId>
         </dependency>
     </dependencies>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -143,18 +135,14 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
     <repositories>
         <repository>
             <id>spring-milestones</id>
             <name>Spring Milestones</name>
             <url>https://repo.spring.io/milestone</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
+            <snapshots><enabled>false</enabled></snapshots>
         </repository>
     </repositories>
-
     <build>
         <plugins>
             <plugin>
@@ -176,9 +164,7 @@
                     <execution>
                         <id>default-compile</id>
                         <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
+                        <goals><goal>compile</goal></goals>
                         <configuration>
                             <annotationProcessorPaths>
                                 <path>
@@ -191,9 +177,7 @@
                     <execution>
                         <id>default-testCompile</id>
                         <phase>test-compile</phase>
-                        <goals>
-                            <goal>testCompile</goal>
-                        </goals>
+                        <goals><goal>testCompile</goal></goals>
                         <configuration>
                             <annotationProcessorPaths>
                                 <path>
@@ -207,5 +191,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>
