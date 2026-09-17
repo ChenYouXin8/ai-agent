@@ -9,24 +9,31 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
 @Service
 public class RequestIdentityService {
 
     private static final String TENANT_HEADER = "X-Tenant-Id";
     private static final String USER_HEADER = "X-User-Id";
+    private static final String ADMIN_TOKEN_HEADER = "X-Admin-Token";
 
     private final boolean trustIdentityHeaders;
     private final boolean requireIdentityHeaders;
     private final boolean oauth2Enabled;
+    private final String legacyAdminToken;
 
     public RequestIdentityService(
             @Value("${chenmanus.security.trust-identity-headers:false}") boolean trustIdentityHeaders,
             @Value("${chenmanus.security.require-identity-headers:false}") boolean requireIdentityHeaders,
-            @Value("${chenmanus.security.mode:legacy}") String securityMode
+            @Value("${chenmanus.security.mode:legacy}") String securityMode,
+            @Value("${chenmanus.security.legacy-admin-token:}") String legacyAdminToken
     ) {
         this.trustIdentityHeaders = trustIdentityHeaders;
         this.requireIdentityHeaders = requireIdentityHeaders;
         this.oauth2Enabled = "oauth2".equalsIgnoreCase(securityMode);
+        this.legacyAdminToken = legacyAdminToken == null ? "" : legacyAdminToken.trim();
     }
 
     public String tenantId(HttpServletRequest request, String candidate) {
@@ -49,6 +56,29 @@ public class RequestIdentityService {
     // legacy 模式整体 permitAll（无任何鉴权），审批入口若仍要求管理员会永久卡死 WAITING_USER 任务
     public boolean canApprove(HttpServletRequest request) {
         return !oauth2Enabled || isAdmin(request);
+    }
+
+    // 管理接口（DLQ 重放、租户配额）门禁：oauth2 模式由 SecurityFilterChain 的管理员角色规则把守；
+    // legacy 模式无鉴权，必须配置令牌后凭 X-Admin-Token 访问，未配置令牌时直接拒绝（fail-closed）
+    public void requireAdminAccess(HttpServletRequest request) {
+        if (oauth2Enabled) return;
+        if (legacyAdminToken.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "legacy 模式下管理接口默认关闭：配置 CHENMANUS_LEGACY_ADMIN_TOKEN 后凭请求头 X-Admin-Token 访问");
+        }
+        String provided = request == null ? null : request.getHeader(ADMIN_TOKEN_HEADER);
+        if (provided == null || !MessageDigest.isEqual(
+                legacyAdminToken.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "管理令牌缺失或不正确");
+        }
+    }
+
+    // 审计 actor 来源标记：oauth2 模式取自已验证的 JWT subject；legacy 模式身份由调用方任意指定，
+    // 加 legacy: 前缀使审计记录不冒充已认证身份
+    public String auditActor(HttpServletRequest request, String candidate) {
+        String actor = userId(request, candidate);
+        return oauth2Enabled ? actor : "legacy:" + actor;
     }
 
     public boolean isPlatformAdmin(HttpServletRequest request) {

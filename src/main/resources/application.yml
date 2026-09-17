@@ -80,6 +80,7 @@ chenmanus:
     mode: ${CHENMANUS_SECURITY_MODE:legacy}
     trust-identity-headers: ${CHENMANUS_TRUST_IDENTITY_HEADERS:false}
     require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
+    legacy-admin-token: ${CHENMANUS_LEGACY_ADMIN_TOKEN:}
     oidc:
       issuer-uri: ${CHENMANUS_OIDC_ISSUER_URI:}
       audience: ${CHENMANUS_OIDC_AUDIENCE:}

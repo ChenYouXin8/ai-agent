@@ -2,6 +2,7 @@ package io.github.chenyouxin8.chenaiagent.task;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -27,7 +29,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void trustedHeadersOverrideClientSuppliedIdentity() {
-        RequestIdentityService service = new RequestIdentityService(true, true, "legacy");
+        RequestIdentityService service = new RequestIdentityService(true, true, "legacy", "");
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-Tenant-Id", "tenant-header");
         request.addHeader("X-User-Id", "user-header");
@@ -39,7 +41,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void requiredTrustedIdentityFailsWhenHeaderIsMissing() {
-        RequestIdentityService service = new RequestIdentityService(true, true, "legacy");
+        RequestIdentityService service = new RequestIdentityService(true, true, "legacy", "");
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThrows(ResponseStatusException.class, () -> service.tenantId(request, "tenant-body"));
@@ -48,7 +50,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void developmentModeKeepsClientIdentityCompatibility() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "legacy");
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy", "");
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertEquals("tenant-body", service.tenantId(request, "tenant-body"));
@@ -57,7 +59,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void oauth2ModeUsesJwtTenantAndSubject() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("user-from-jwt")
@@ -73,7 +75,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void oauth2AdminRoleIsExposed() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("admin-user")
@@ -90,13 +92,13 @@ class RequestIdentityServiceTest {
 
     @Test
     void legacyModeAllowsApproval() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "legacy");
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy", "");
         assertTrue(service.canApprove(new MockHttpServletRequest()));
     }
 
     @Test
     void oauth2ModeBlocksApprovalWithoutAdminRole() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("normal-user")
@@ -111,7 +113,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void oauth2ModeAllowsApprovalForTenantAdmin() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("admin-user")
@@ -128,7 +130,7 @@ class RequestIdentityServiceTest {
 
     @Test
     void oauth2ModeRejectsJwtWithoutTenantClaim() {
-        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
                 .subject("user-from-jwt")
@@ -140,5 +142,57 @@ class RequestIdentityServiceTest {
 
         assertThrows(ResponseStatusException.class,
                 () -> service.tenantId(new MockHttpServletRequest(), "tenant-body"));
+    }
+
+    @Test
+    void legacyAdminAccessIsDeniedWhenTokenNotConfigured() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy", "");
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.requireAdminAccess(new MockHttpServletRequest()));
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+    }
+
+    @Test
+    void legacyAdminAccessRequiresMatchingTokenHeader() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy", "secret-token");
+
+        MockHttpServletRequest missing = new MockHttpServletRequest();
+        assertThrows(ResponseStatusException.class, () -> service.requireAdminAccess(missing));
+
+        MockHttpServletRequest wrong = new MockHttpServletRequest();
+        wrong.addHeader("X-Admin-Token", "wrong-token");
+        assertThrows(ResponseStatusException.class, () -> service.requireAdminAccess(wrong));
+
+        MockHttpServletRequest correct = new MockHttpServletRequest();
+        correct.addHeader("X-Admin-Token", "secret-token");
+        assertDoesNotThrow(() -> service.requireAdminAccess(correct));
+    }
+
+    @Test
+    void oauth2AdminAccessDefersToSecurityFilterChain() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
+        assertDoesNotThrow(() -> service.requireAdminAccess(new MockHttpServletRequest()));
+    }
+
+    @Test
+    void legacyAuditActorIsMarkedUnverified() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "legacy", "");
+        assertEquals("legacy:user-body", service.auditActor(new MockHttpServletRequest(), "user-body"));
+    }
+
+    @Test
+    void oauth2AuditActorUsesVerifiedJwtSubject() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2", "");
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("user-from-jwt")
+                .claim("tenant_id", "tenant-a")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+
+        assertEquals("user-from-jwt", service.auditActor(new MockHttpServletRequest(), "spoofed-user"));
     }
 }

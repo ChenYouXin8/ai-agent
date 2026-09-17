@@ -60,6 +60,7 @@ public class TaskController {
 
     @GetMapping("/quota")
     public ApiResponse<QuotaView> quota(@RequestParam(required = false) String tenantId, HttpServletRequest httpRequest) {
+        identityService.requireAdminAccess(httpRequest);
         String normalizedTenant = identityService.tenantId(httpRequest, tenantId);
         return ApiResponse.ok(new QuotaView(normalizedTenant, quotaService.activeTasks(normalizedTenant), quotaService.maxActiveTasksPerTenant()));
     }
@@ -87,7 +88,7 @@ public class TaskController {
                                          @RequestParam(required = false) String userId, @RequestBody(required = false) ApprovalRequest body,
                                          HttpServletRequest request) {
         authorize(taskId, tenantId, userId, request); requireApprovalAdmin(request);
-        approvalService.approve(taskId, body == null ? "" : body.note(), identityService.userId(request, userId));
+        approvalService.approve(taskId, body == null ? "" : body.note(), identityService.auditActor(request, userId));
         return ApiResponse.ok(taskManager.get(taskId));
     }
 
@@ -96,7 +97,7 @@ public class TaskController {
                                         @RequestParam(required = false) String userId, @RequestBody(required = false) ApprovalRequest body,
                                         HttpServletRequest request) {
         authorize(taskId, tenantId, userId, request); requireApprovalAdmin(request);
-        approvalService.reject(taskId, body == null ? "" : body.note(), identityService.userId(request, userId));
+        approvalService.reject(taskId, body == null ? "" : body.note(), identityService.auditActor(request, userId));
         return ApiResponse.ok(taskManager.get(taskId));
     }
 

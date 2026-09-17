@@ -12,7 +12,9 @@ Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：�
 
 并发防护：审批状态转移使用条件更新（CAS）写入——仅当数据库中任务仍为 `WAITING_USER` 时生效。并发双审、审批与驳回/取消交错时，后到的一方会因状态已变更而失败回滚（HTTP 409），不会产生重复审批事件、重复入队或"已批准步骤 + 已取消任务"的矛盾状态。任务聚合的保存以单数据库事务写入（任务行、步骤、产物原子提交），同一实例内按任务串行化，多实例部署时由任务行锁在数据库层串行化并发保存，步骤不会被交错覆盖或重复插入。
 
-审批权限：`CHENMANUS_SECURITY_MODE=oauth2` 时仅 `TENANT_ADMIN` / `PLATFORM_ADMIN` 可审批；legacy 模式整体无鉴权（permitAll），审批接口同样放行。
+审批权限：`CHENMANUS_SECURITY_MODE=oauth2` 时仅 `TENANT_ADMIN` / `PLATFORM_ADMIN` 可审批；legacy 模式整体无鉴权（permitAll），审批接口同样放行，但审计事件中的 actor 会标记为 `legacy:<user>`（未验证身份），不会冒充已认证主体。管理接口（`/api/tasks/admin/**` 与 `/api/tasks/quota`）在 oauth2 模式下要求管理员角色；legacy 模式下默认关闭，需配置 `CHENMANUS_LEGACY_ADMIN_TOKEN` 后凭请求头 `X-Admin-Token` 访问（常量时间比较）。
+
+分布式锁：`CHENMANUS_REDIS_ENABLED=true` 时任务执行与调度加分布式锁。锁获取 fail-closed——Redis 不可用时任务留在队列中等待重试，而不是在无锁状态下并发执行；解锁通过 Lua CAS 脚本原子完成（仅当锁仍属于当前持有者才删除），TTL 作为 Redis 故障期间的最终安全网。
 
 审计历史：
 
