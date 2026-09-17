@@ -83,9 +83,7 @@ public class TaskRuntimeService {
                 ));
             }
 
-            if (!runPendingSteps(task) || isStopped(task) || task.getStatus() == TaskStatus.FAILED) {
-                return;
-            }
+            if (!runPendingSteps(task) || isStopped(task) || task.getStatus() == TaskStatus.FAILED) return;
 
             taskManager.updateStatus(task, TaskStatus.REVIEWING, "Reviewer 正在验收任务结果");
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始结果审核"));
@@ -234,25 +232,28 @@ public class TaskRuntimeService {
 
         try {
             ChenManus agent = new ChenManus(tools, chatModel);
+            agent.setToolObserver((phase, toolName, detail) -> {
+                TaskEventType type = switch (phase) {
+                    case "started" -> TaskEventType.TOOL_STARTED;
+                    case "completed" -> TaskEventType.TOOL_COMPLETED;
+                    default -> TaskEventType.MESSAGE;
+                };
+                taskManager.publish(new TaskEvent(
+                        task.getTaskId(), type, step.getStepId(),
+                        toolName + (detail == null || detail.isBlank() ? "" : "：" + detail)
+                ));
+            });
             String output = agent.run(buildStepPrompt(task, step));
-            if (output == null || output.isBlank()) {
-                throw new IllegalStateException("Agent 未返回有效结果");
-            }
+            if (output == null || output.isBlank()) throw new IllegalStateException("Agent 未返回有效结果");
             step.setOutput(output);
             step.setStatus(StepStatus.COMPLETED);
             step.setError(null);
             artifactService.capture(task, output, taskManager);
-            taskManager.publish(new TaskEvent(
-                    task.getTaskId(), TaskEventType.STEP_COMPLETED,
-                    step.getStepId(), output
-            ));
+            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED, step.getStepId(), output));
         } catch (Exception e) {
             step.setError(e.getMessage());
             step.setStatus(StepStatus.FAILED);
-            taskManager.publish(new TaskEvent(
-                    task.getTaskId(), TaskEventType.STEP_FAILED,
-                    step.getStepId(), e.getMessage()
-            ));
+            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_FAILED, step.getStepId(), e.getMessage()));
             throw e;
         } finally {
             step.setCompletedAt(System.currentTimeMillis());
