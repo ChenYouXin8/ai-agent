@@ -87,7 +87,7 @@ OAUTH2_ISSUER_URI=https://idp.example.com/realms/chenmanus
 OAUTH2_AUDIENCE=https://api.example.com
 ```
 
-Resource Server 会根据 `issuer-uri` 校验 JWT 的 issuer，并可使用 `audiences` 校验 `aud` claim；应用自定义 converter 会读取 `roles`、`realm_access.roles` 和 `permissions` 并映射为 Spring Security roles。 citeturn640166search0turn640166search1
+Resource Server 会根据 `issuer-uri` 校验 JWT 的 issuer，并可使用 `audiences` 校验 `aud` claim；应用自定义 converter 会读取 `roles`、`realm_access.roles` 和 `permissions` 并映射为 Spring Security roles。
 
 多租户 OAuth2 token 需要提供 `tenant_id` 或 `tenant` claim；缺失时请求被拒绝，而不是落入默认租户。
 
