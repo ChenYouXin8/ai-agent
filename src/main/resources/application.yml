@@ -1,6 +1,14 @@
 spring:
   application:
     name: chen-ai-agent
+  datasource:
+    url: jdbc:h2:file:./data/chenmanus-db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: embedded
   ai:
     mcp:
       client:
@@ -30,7 +38,6 @@ server:
   servlet:
     context-path: /api
 
-# Actuator（健康检查端点）
 management:
   endpoints:
     web:
@@ -62,3 +69,7 @@ knife4j:
 
 search-api:
   api-key: ${SEARCH_API_KEY}
+
+chenmanus:
+  memory:
+    dir: ./data/task-memory
