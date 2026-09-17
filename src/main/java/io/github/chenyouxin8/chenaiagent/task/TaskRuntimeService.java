@@ -30,6 +30,8 @@ public class TaskRuntimeService {
     private final TaskMemoryService memoryService;
     private final ArtifactService artifactService;
     private final AgentRolePromptService rolePromptService;
+    private final AgentTeamPlannerService teamPlannerService;
+    private final AgentHandoffService handoffService;
     private final TaskQueueService queueService;
     private final TaskMetricsService metricsService;
     private final Semaphore parallelSlots;
@@ -43,6 +45,8 @@ public class TaskRuntimeService {
             TaskMemoryService memoryService,
             ArtifactService artifactService,
             AgentRolePromptService rolePromptService,
+            AgentTeamPlannerService teamPlannerService,
+            AgentHandoffService handoffService,
             TaskQueueService queueService,
             TaskMetricsService metricsService,
             @Value("${chenmanus.runtime.max-parallel-steps:4}") int maxParallelSteps
@@ -55,6 +59,8 @@ public class TaskRuntimeService {
         this.memoryService = memoryService;
         this.artifactService = artifactService;
         this.rolePromptService = rolePromptService;
+        this.teamPlannerService = teamPlannerService;
+        this.handoffService = handoffService;
         this.queueService = queueService;
         this.metricsService = metricsService;
         this.parallelSlots = new Semaphore(Math.max(1, maxParallelSteps));
@@ -187,7 +193,8 @@ public class TaskRuntimeService {
 
             List<TaskStep> parallel = ready.stream().filter(TaskStep::isParallelizable).toList();
             if (parallel.size() >= 2) {
-                taskManager.updateStatus(task, TaskStatus.RUNNING, "并行执行 " + parallel.size() + " 个 DAG 节点（本实例并发上限受配置控制）");
+                taskManager.updateStatus(task, TaskStatus.RUNNING,
+                        "并行执行 " + parallel.size() + " 个 DAG 节点（本实例并发上限受配置控制）");
                 taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.MESSAGE, null,
                         "并行启动：" + parallel.stream().map(TaskStep::getTitle).collect(Collectors.joining("、"))));
 
@@ -240,11 +247,8 @@ public class TaskRuntimeService {
         if (!memoryContext.isBlank()) planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
 
         LlmPlanner.PlanResult planResult = planner.createPlanWithUsage(planningPrompt);
-        metricsService.recordActualUsage(
-                task,
-                planResult.actualInputTokens(),
-                planResult.actualOutputTokens(),
-                planResult.modelCallCount());
+        metricsService.recordActualUsage(task,
+                planResult.actualInputTokens(), planResult.actualOutputTokens(), planResult.modelCallCount());
         Plan plan = planResult.plan();
         task.setTitle(plan.title());
         task.setPlanSummary(plan.summary());
@@ -306,13 +310,15 @@ public class TaskRuntimeService {
         step.setStatus(StepStatus.RUNNING);
         step.setStartedAt(System.currentTimeMillis());
         taskManager.save(task);
+
+        AgentAssignment assignment = teamPlannerService.assign(step);
+        handoffService.publish(task, step, assignment, taskManager);
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_STARTED,
-                step.getStepId(), step.getTitle()));
+                step.getStepId(), step.getTitle() + " · " + assignment.role().name()));
 
         ChenManus agent = null;
-        String prompt = buildStepPrompt(task, step);
+        String prompt = buildStepPrompt(task, step, assignment);
         try {
-            AgentRole role = rolePromptService.resolve(extractType(step.getDescription()), step.getTitle());
             agent = new ChenManus(tools, chatModel);
             agent.setToolObserver((phase, toolName, detail) -> {
                 TaskEventType eventType = switch (phase) {
@@ -357,37 +363,33 @@ public class TaskRuntimeService {
         }
     }
 
-    private String buildStepPrompt(ChenTask task, TaskStep step) {
-        AgentRole role = rolePromptService.resolve(extractType(step.getDescription()), step.getTitle());
-        String dependencyOutputs = task.getSteps().stream()
-                .filter(candidate -> step.getDependsOn() != null && step.getDependsOn().contains(candidate.getSequence()))
-                .filter(candidate -> candidate.getOutput() != null && !candidate.getOutput().isBlank())
-                .map(candidate -> "步骤 " + candidate.getSequence() + " - " + candidate.getTitle() + ":\n" + truncate(candidate.getOutput(), 3500))
-                .collect(Collectors.joining("\n\n"));
+    private String buildStepPrompt(ChenTask task, TaskStep step, AgentAssignment assignment) {
+        String handoff = handoffService.buildHandoff(task, step, assignment);
         String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 2);
 
         return """
-                你是 ChenManus 2.0 的任务执行 Agent。
+                你是 ChenManus 2.0 团队中的执行 Agent。
                 %s
+
                 当前总任务：%s
                 当前执行步骤：%s
                 步骤说明：%s
 
-                规则：
-                1. 只关注当前步骤，但必须利用依赖步骤结果。
+                团队交接上下文：
+                %s
+
+                执行规则：
+                1. 只关注当前步骤，但必须使用团队交接上下文中的依赖结果。
                 2. 历史记忆只用于参考，不得把其中内容当作当前事实。
                 3. 能使用工具时优先使用工具完成实际工作，而不是只给建议。
                 4. 不要伪造工具执行结果；无法完成时明确说明原因。
-                5. 当前步骤完成后，返回清晰、可验证的结果。
-
-                依赖步骤结果：
-                %s
+                5. 完成后返回清晰、可验证的结果，并说明未解决的问题。
 
                 同一用户/会话历史任务记忆：
                 %s
-                """.formatted(rolePromptService.instruction(role), task.getPrompt(), step.getTitle(),
-                step.getDescription(), dependencyOutputs.isBlank() ? "（无）" : dependencyOutputs,
-                memoryContext.isBlank() ? "（无）" : memoryContext);
+                """.formatted(
+                assignment.instruction(), task.getPrompt(), step.getTitle(), step.getDescription(),
+                handoff, memoryContext.isBlank() ? "（无）" : memoryContext);
     }
 
     private String extractType(String description) {
