@@ -30,9 +30,7 @@ public class RequestIdentityService {
     }
 
     public String tenantId(HttpServletRequest request, String candidate) {
-        if (oauth2Enabled) {
-            return jwtClaim("tenant_id", "tenant", "default");
-        }
+        if (oauth2Enabled) return requiredJwtClaim("tenant_id", "tenant");
         return resolve(request, TENANT_HEADER, candidate, "default");
     }
 
@@ -61,22 +59,28 @@ public class RequestIdentityService {
         return normalize(candidate, fallback);
     }
 
-    private String jwtClaim(String primary, String secondary, String fallback) {
+    private String requiredJwtClaim(String primary, String secondary) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "缺少有效登录身份");
         }
         Object principal = authentication.getPrincipal();
-        if (principal instanceof Jwt jwt) {
-            Object value = jwt.getClaim(primary);
-            if (value == null || String.valueOf(value).isBlank()) value = jwt.getClaim(secondary);
-            return normalize(value == null ? null : String.valueOf(value), fallback);
+        if (!(principal instanceof Jwt jwt)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "OAuth2 身份不是有效 JWT");
         }
-        return fallback;
+        Object value = jwt.getClaim(primary);
+        if (value == null || String.valueOf(value).isBlank()) value = jwt.getClaim(secondary);
+        if (value == null || String.valueOf(value).isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "JWT 缺少租户标识 claim：" + primary);
+        }
+        return normalize(String.valueOf(value), null);
     }
 
     private String normalize(String value, String fallback) {
-        if (value == null || value.isBlank()) return fallback;
+        if (value == null || value.isBlank()) {
+            if (fallback == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "身份标识不能为空");
+            return fallback;
+        }
         String normalized = value.trim();
         return normalized.substring(0, Math.min(128, normalized.length()));
     }
