@@ -28,15 +28,21 @@ public class TaskManager {
     }
 
     public ChenTask create(String prompt) {
-        return create(prompt, "anonymous", "default");
+        return create(prompt, "default", "anonymous", "default", TaskPriority.NORMAL);
     }
 
     public ChenTask create(String prompt, String ownerId, String sessionId) {
+        return create(prompt, "default", ownerId, sessionId, TaskPriority.NORMAL);
+    }
+
+    public ChenTask create(String prompt, String tenantId, String ownerId, String sessionId, TaskPriority priority) {
         String id = "task_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         ChenTask task = new ChenTask(id, prompt);
         task.setTitle(prompt.length() > 32 ? prompt.substring(0, 32) + "..." : prompt);
+        task.setTenantId(normalizeIdentity(tenantId, "default"));
         task.setOwnerId(normalizeIdentity(ownerId, "anonymous"));
         task.setSessionId(normalizeIdentity(sessionId, "default"));
+        task.setPriority(priority == null ? TaskPriority.NORMAL : priority);
         tasks.put(id, task);
         save(task);
         publish(new TaskEvent(id, TaskEventType.TASK_CREATED, null, "任务已创建"));
@@ -50,13 +56,19 @@ public class TaskManager {
     }
 
     public List<ChenTask> list() {
-        return list(null, null);
+        return list(null, null, null);
     }
 
     public List<ChenTask> list(String ownerId, String sessionId) {
+        return list(null, ownerId, sessionId);
+    }
+
+    public List<ChenTask> list(String tenantId, String ownerId, String sessionId) {
+        String normalizedTenant = normalizeIdentity(tenantId, null);
         String normalizedOwner = normalizeIdentity(ownerId, null);
         String normalizedSession = normalizeIdentity(sessionId, null);
         return tasks.values().stream()
+                .filter(task -> normalizedTenant == null || normalizedTenant.equals(task.getTenantId()))
                 .filter(task -> normalizedOwner == null || normalizedOwner.equals(task.getOwnerId()))
                 .filter(task -> normalizedSession == null || normalizedSession.equals(task.getSessionId()))
                 .sorted(Comparator.comparing(ChenTask::getCreatedAt).reversed())
