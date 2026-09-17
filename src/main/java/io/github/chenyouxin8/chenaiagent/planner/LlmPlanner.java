@@ -3,6 +3,8 @@ package io.github.chenyouxin8.chenaiagent.planner;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -37,19 +39,25 @@ public class LlmPlanner {
     }
 
     public Plan createPlan(String userPrompt) {
+        return createPlanWithUsage(userPrompt).plan();
+    }
+
+    public PlanResult createPlanWithUsage(String userPrompt) {
         try {
-            Plan plan = chatClient.prompt()
+            var response = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user("Create an execution DAG for this user task:\n\n" + userPrompt)
                     .call()
-                    .entity(Plan.class, spec -> spec.validateSchema());
+                    .responseEntity(Plan.class, spec -> spec.validateSchema());
 
-            if (plan == null || plan.steps() == null) return fallback(userPrompt);
+            Plan plan = response == null ? null : response.getEntity();
+            Usage usage = usageOf(response == null ? null : response.getResponse());
+            if (plan == null || plan.steps() == null) return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
             List<PlanStep> raw = plan.steps().stream()
                     .filter(step -> step != null && step.title() != null && !step.title().isBlank())
                     .limit(6)
                     .toList();
-            if (raw.isEmpty()) return fallback(userPrompt);
+            if (raw.isEmpty()) return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
 
             List<PlanStep> normalized = new ArrayList<>();
             for (int i = 0; i < raw.size(); i++) {
@@ -72,15 +80,28 @@ public class LlmPlanner {
                 ));
             }
 
-            return new Plan(
+            Plan normalizedPlan = new Plan(
                     plan.title() == null || plan.title().isBlank() ? "ChenManus 任务" : plan.title().trim(),
                     plan.summary() == null ? "" : plan.summary().trim(),
                     normalized
             );
+            return new PlanResult(normalizedPlan, usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
         } catch (Exception e) {
             log.warn("LLM planner failed, using fallback plan: {}", e.getMessage());
-            return fallback(userPrompt);
+            return new PlanResult(fallback(userPrompt), 0L, 0L, 0L);
         }
+    }
+
+    private Usage usageOf(ChatResponse response) {
+        return response == null || response.getMetadata() == null ? null : response.getMetadata().getUsage();
+    }
+
+    private long usageInput(Usage usage) {
+        return usage == null || usage.getPromptTokens() == null ? 0L : usage.getPromptTokens().longValue();
+    }
+
+    private long usageOutput(Usage usage) {
+        return usage == null || usage.getCompletionTokens() == null ? 0L : usage.getCompletionTokens().longValue();
     }
 
     private Plan fallback(String prompt) {
@@ -90,4 +111,11 @@ public class LlmPlanner {
                 List.of(new PlanStep("完成用户任务", prompt, "GENERAL", "返回满足用户要求的最终结果", List.of(), false))
         );
     }
+
+    public record PlanResult(
+            Plan plan,
+            long actualInputTokens,
+            long actualOutputTokens,
+            long modelCallCount
+    ) {}
 }
