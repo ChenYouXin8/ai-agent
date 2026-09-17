@@ -26,6 +26,7 @@ public class TaskRuntimeService {
     private final TaskReviewerService reviewer;
     private final TaskMemoryService memoryService;
     private final ArtifactService artifactService;
+    private final AgentRolePromptService rolePromptService;
 
     public TaskRuntimeService(
             TaskManager taskManager,
@@ -34,7 +35,8 @@ public class TaskRuntimeService {
             LlmPlanner planner,
             TaskReviewerService reviewer,
             TaskMemoryService memoryService,
-            ArtifactService artifactService
+            ArtifactService artifactService,
+            AgentRolePromptService rolePromptService
     ) {
         this.taskManager = taskManager;
         this.tools = tools;
@@ -43,6 +45,7 @@ public class TaskRuntimeService {
         this.reviewer = reviewer;
         this.memoryService = memoryService;
         this.artifactService = artifactService;
+        this.rolePromptService = rolePromptService;
     }
 
     public void start(String taskId) {
@@ -203,10 +206,10 @@ public class TaskRuntimeService {
     }
 
     private void createPlan(ChenTask task) {
-        String memoryContext = memoryService.recallContext(task.getSessionId(), task.getPrompt(), 3);
+        String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 3);
         String planningPrompt = task.getPrompt();
         if (!memoryContext.isBlank()) {
-            planningPrompt += "\n\n以下是同一会话近期历史任务记忆，仅用于参考做法，不可当作当前任务事实：\n" + memoryContext;
+            planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考做法，不可当作当前任务事实：\n" + memoryContext;
         }
 
         Plan plan = planner.createPlan(planningPrompt);
@@ -287,6 +290,7 @@ public class TaskRuntimeService {
         ));
 
         try {
+            AgentRole role = rolePromptService.resolve(extractType(step.getDescription()), step.getTitle());
             ChenManus agent = new ChenManus(tools, chatModel);
             agent.setToolObserver((phase, toolName, detail) -> {
                 TaskEventType type = switch (phase) {
@@ -300,7 +304,7 @@ public class TaskRuntimeService {
                         toolName + (detail == null || detail.isBlank() ? "" : "：" + detail)
                 ));
             });
-            String output = agent.run(buildStepPrompt(task, step));
+            String output = agent.run(buildStepPrompt(task, step, role));
             if (output == null || output.isBlank()) throw new IllegalStateException("Agent 未返回有效结果");
             step.setOutput(output);
             step.setStatus(StepStatus.COMPLETED);
@@ -323,17 +327,18 @@ public class TaskRuntimeService {
         }
     }
 
-    private String buildStepPrompt(ChenTask task, TaskStep step) {
+    private String buildStepPrompt(ChenTask task, TaskStep step, AgentRole role) {
         String previousOutputs = task.getSteps().stream()
                 .filter(candidate -> candidate.getSequence() < step.getSequence())
                 .filter(candidate -> candidate.getOutput() != null && !candidate.getOutput().isBlank())
                 .map(candidate -> "步骤 " + candidate.getSequence() + " - " + candidate.getTitle() + ":\n" + truncate(candidate.getOutput(), 3500))
                 .collect(Collectors.joining("\n\n"));
-        String memoryContext = memoryService.recallContext(task.getSessionId(), task.getPrompt(), 2);
+        String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 2);
         String memorySection = memoryContext.isBlank() ? "（无）" : memoryContext;
 
         return """
                 你是 ChenManus 2.0 的任务执行 Agent。
+                %s
                 当前总任务：%s
                 当前执行步骤：%s
                 步骤说明：%s
@@ -348,15 +353,26 @@ public class TaskRuntimeService {
                 已完成步骤结果：
                 %s
 
-                同一会话历史任务记忆：
+                同一用户/会话历史任务记忆：
                 %s
                 """.formatted(
+                rolePromptService.instruction(role),
                 task.getPrompt(),
                 step.getTitle(),
                 step.getDescription(),
                 previousOutputs.isBlank() ? "（无）" : previousOutputs,
                 memorySection
         );
+    }
+
+    private String extractType(String description) {
+        if (description == null) return "GENERAL";
+        String marker = "类型：";
+        int index = description.indexOf(marker);
+        if (index < 0) return "GENERAL";
+        int start = index + marker.length();
+        int end = description.indexOf('\n', start);
+        return end < 0 ? description.substring(start).trim() : description.substring(start, end).trim();
     }
 
     private boolean isStopped(ChenTask task) {
