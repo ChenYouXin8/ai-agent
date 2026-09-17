@@ -2,8 +2,10 @@ package io.github.chenyouxin8.chenaiagent.controller;
 
 import io.github.chenyouxin8.chenaiagent.task.Artifact;
 import io.github.chenyouxin8.chenaiagent.task.ChenTask;
+import io.github.chenyouxin8.chenaiagent.task.RequestIdentityService;
 import io.github.chenyouxin8.chenaiagent.task.TaskManager;
 import io.github.chenyouxin8.chenaiagent.task.TaskScopeService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -32,15 +34,18 @@ public class ArtifactController {
 
     private final TaskManager taskManager;
     private final TaskScopeService scopeService;
+    private final RequestIdentityService identityService;
     private final Path allowedRoot;
 
     public ArtifactController(
             TaskManager taskManager,
             TaskScopeService scopeService,
-            @Value("${chenmanus.artifacts.allowed-root:.}") String allowedRoot
+            RequestIdentityService identityService,
+            @Value("${chenmanus.artifacts.allowed-root:./data}") String allowedRoot
     ) {
         this.taskManager = taskManager;
         this.scopeService = scopeService;
+        this.identityService = identityService;
         this.allowedRoot = Paths.get(allowedRoot).toAbsolutePath().normalize();
     }
 
@@ -49,9 +54,10 @@ public class ArtifactController {
             @PathVariable String taskId,
             @PathVariable String artifactId,
             @RequestParam(required = false) String tenantId,
-            @RequestParam(required = false) String userId
+            @RequestParam(required = false) String userId,
+            HttpServletRequest httpRequest
     ) {
-        ChenTask task = authorizedTask(taskId, tenantId, userId);
+        ChenTask task = authorizedTask(taskId, tenantId, userId, httpRequest);
         Artifact artifact = findArtifact(task, artifactId);
         return buildResponse(artifact, resolveSafePath(artifact.getPath()), ContentDisposition.attachment());
     }
@@ -61,9 +67,10 @@ public class ArtifactController {
             @PathVariable String taskId,
             @PathVariable String artifactId,
             @RequestParam(required = false) String tenantId,
-            @RequestParam(required = false) String userId
+            @RequestParam(required = false) String userId,
+            HttpServletRequest httpRequest
     ) {
-        ChenTask task = authorizedTask(taskId, tenantId, userId);
+        ChenTask task = authorizedTask(taskId, tenantId, userId, httpRequest);
         Artifact artifact = findArtifact(task, artifactId);
         Path file = resolveSafePath(artifact.getPath());
         MediaType mediaType = parseMediaType(artifact.getMediaType());
@@ -75,9 +82,17 @@ public class ArtifactController {
         return buildResponse(artifact, file, ContentDisposition.inline());
     }
 
-    private ChenTask authorizedTask(String taskId, String tenantId, String userId) {
+    private ChenTask authorizedTask(
+            String taskId,
+            String tenantId,
+            String userId,
+            HttpServletRequest httpRequest
+    ) {
         ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(task, tenantId, userId);
+        scopeService.assertAccess(
+                task,
+                identityService.tenantId(httpRequest, tenantId),
+                identityService.userId(httpRequest, userId));
         return task;
     }
 
@@ -99,6 +114,7 @@ public class ArtifactController {
         headers.setContentLength(artifact.getSizeBytes() > 0 ? artifact.getSizeBytes() : fileSize(file));
         headers.setContentDisposition(disposition.filename(artifact.getName()).build());
         headers.set("X-Artifact-Version", String.valueOf(artifact.getVersion()));
+        headers.set("X-Content-Type-Options", "nosniff");
         if (artifact.getChecksum() != null && !artifact.getChecksum().isBlank()) {
             headers.set("X-Artifact-SHA256", artifact.getChecksum());
         }
