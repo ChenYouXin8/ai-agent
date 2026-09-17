@@ -62,15 +62,15 @@ public class TaskMemoryService {
     }
 
     public String recallContext(String query, int limit) {
-        return recallContext(null, null, null, query, limit);
+        return recallContext(TaskTenantContext.get(), null, null, query, limit);
     }
 
     public String recallContext(String sessionId, String query, int limit) {
-        return recallContext(null, null, sessionId, query, limit);
+        return recallContext(TaskTenantContext.get(), null, sessionId, query, limit);
     }
 
     public String recallContext(String ownerId, String sessionId, String query, int limit) {
-        return recallContext(null, ownerId, sessionId, query, limit);
+        return recallContext(TaskTenantContext.get(), ownerId, sessionId, query, limit);
     }
 
     public String recallContext(String tenantId, String ownerId, String sessionId, String query, int limit) {
@@ -129,8 +129,6 @@ public class TaskMemoryService {
         for (Path file : files) {
             try {
                 String content = Files.readString(file, StandardCharsets.UTF_8);
-                // Tenant is mandatory for scoped recall. Legacy memories without tenant metadata
-                // remain readable only through the explicit compatibility overloads above.
                 if (!normalizedTenant.isBlank() && !content.contains("租户：" + normalizedTenant + "\n")) continue;
                 if (!normalizedOwner.isBlank() && !content.contains("用户：" + normalizedOwner + "\n")) continue;
                 if (!normalizedSession.isBlank() && !content.contains("会话：" + normalizedSession + "\n")) continue;
