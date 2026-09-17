@@ -22,6 +22,7 @@ public class TaskQueueService {
     private final boolean redisEnabled;
     private final String queueKey;
     private final PriorityBlockingQueue<QueueItem> localQueue = new PriorityBlockingQueue<>();
+    private final PriorityBlockingQueue<QueueItem> localDeadLetterQueue = new PriorityBlockingQueue<>();
     private final AtomicLong sequence = new AtomicLong();
 
     public TaskQueueService(
@@ -51,6 +52,45 @@ public class TaskQueueService {
         localQueue.offer(new QueueItem(taskId, effective, sequence.incrementAndGet()));
     }
 
+    public void deadLetter(String taskId, String reason) {
+        String payload = taskId + "|" + (reason == null ? "" : reason.replace("\n", " "));
+        if (redisEnabled) {
+            try {
+                redis.opsForList().rightPush(deadLetterKey(), payload);
+                return;
+            } catch (RuntimeException ignored) {
+                // Fall through to local DLQ.
+            }
+        }
+        localDeadLetterQueue.offer(new QueueItem(payload, TaskPriority.CRITICAL, sequence.incrementAndGet()));
+    }
+
+    public List<String> deadLetters(int limit) {
+        int max = Math.max(1, Math.min(limit, 100));
+        if (redisEnabled) {
+            try {
+                List<String> values = redis.opsForList().range(deadLetterKey(), 0, max - 1);
+                return values == null ? List.of() : List.copyOf(values);
+            } catch (RuntimeException ignored) {
+                // Fall back to local DLQ.
+            }
+        }
+        return localDeadLetterQueue.stream().limit(max).map(QueueItem::taskId).toList();
+    }
+
+    public String pollDeadLetter() {
+        if (redisEnabled) {
+            try {
+                String value = redis.opsForList().leftPop(deadLetterKey());
+                if (value != null) return value;
+            } catch (RuntimeException ignored) {
+                // Fall back to local DLQ.
+            }
+        }
+        QueueItem item = localDeadLetterQueue.poll();
+        return item == null ? null : item.taskId();
+    }
+
     public String poll() {
         QueueItem local = localQueue.poll();
         if (local != null) return local.taskId();
@@ -72,6 +112,10 @@ public class TaskQueueService {
 
     private String redisKey(TaskPriority priority) {
         return queueKey + ":" + priority.name().toLowerCase();
+    }
+
+    private String deadLetterKey() {
+        return queueKey + ":dlq";
     }
 
     private record QueueItem(String taskId, TaskPriority priority, long sequence) implements Comparable<QueueItem> {
