@@ -6,6 +6,7 @@ import io.github.chenyouxin8.chenaiagent.task.TaskEvent;
 import io.github.chenyouxin8.chenaiagent.task.TaskEventType;
 import io.github.chenyouxin8.chenaiagent.task.TaskManager;
 import io.github.chenyouxin8.chenaiagent.task.TaskPriority;
+import io.github.chenyouxin8.chenaiagent.task.TaskQuotaService;
 import io.github.chenyouxin8.chenaiagent.task.TaskRuntimeService;
 import io.github.chenyouxin8.chenaiagent.task.TaskScopeService;
 import org.springframework.web.bind.annotation.*;
@@ -21,11 +22,18 @@ public class TaskController {
     private final TaskManager taskManager;
     private final TaskRuntimeService runtime;
     private final TaskScopeService scopeService;
+    private final TaskQuotaService quotaService;
 
-    public TaskController(TaskManager taskManager, TaskRuntimeService runtime, TaskScopeService scopeService) {
+    public TaskController(
+            TaskManager taskManager,
+            TaskRuntimeService runtime,
+            TaskScopeService scopeService,
+            TaskQuotaService quotaService
+    ) {
         this.taskManager = taskManager;
         this.runtime = runtime;
         this.scopeService = scopeService;
+        this.quotaService = quotaService;
     }
 
     @PostMapping
@@ -36,6 +44,7 @@ public class TaskController {
         String tenantId = scopeService.normalize(request.tenantId(), "default");
         String userId = scopeService.normalize(request.userId(), "anonymous");
         String sessionId = scopeService.normalize(request.sessionId(), "default");
+        quotaService.assertCanCreate(tenantId);
         ChenTask task = taskManager.create(
                 request.prompt().trim(), tenantId, userId, sessionId, TaskPriority.from(request.priority()));
         runtime.start(task.getTaskId());
@@ -49,6 +58,16 @@ public class TaskController {
             @RequestParam(required = false) String sessionId
     ) {
         return ApiResponse.ok(taskManager.list(tenantId, userId, sessionId));
+    }
+
+    @GetMapping("/quota")
+    public ApiResponse<QuotaView> quota(@RequestParam(required = false) String tenantId) {
+        String normalizedTenant = scopeService.normalize(tenantId, "default");
+        return ApiResponse.ok(new QuotaView(
+                normalizedTenant,
+                quotaService.activeTasks(normalizedTenant),
+                quotaService.maxActiveTasksPerTenant()
+        ));
     }
 
     @GetMapping("/{taskId}")
@@ -133,4 +152,6 @@ public class TaskController {
             String sessionId,
             String priority
     ) {}
+
+    public record QuotaView(String tenantId, int activeTasks, int maxActiveTasksPerTenant) {}
 }
