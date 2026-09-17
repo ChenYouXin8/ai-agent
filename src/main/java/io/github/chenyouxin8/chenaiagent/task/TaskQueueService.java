@@ -74,7 +74,7 @@ public class TaskQueueService {
         return queueKey + ":" + priority.name().toLowerCase();
     }
 
-    private record QueueItem(TaskPriority priority, long sequence, String taskId) implements Comparable<QueueItem> {
+    private record QueueItem(String taskId, TaskPriority priority, long sequence) implements Comparable<QueueItem> {
         @Override
         public int compareTo(QueueItem other) {
             int byPriority = Integer.compare(other.priority.getWeight(), priority.getWeight());
