@@ -83,6 +83,10 @@ chenmanus:
     oidc:
       issuer-uri: ${CHENMANUS_OIDC_ISSUER_URI:}
       audience: ${CHENMANUS_OIDC_AUDIENCE:}
+  approval:
+    enabled: ${CHENMANUS_APPROVAL_ENABLED:true}
+    required-types: ${CHENMANUS_APPROVAL_REQUIRED_TYPES:DEPLOY,PURCHASE,PAYMENT}
+    required-keywords: ${CHENMANUS_APPROVAL_REQUIRED_KEYWORDS:deploy,deployment,publish,publishing,send,sending,delete,deleting,purchase,pay,payment,production,prod,shutdown,release,发布,部署,上线,发送,删除,购买,支付,生产,停机,发布配置}
   memory:
     dir: ./data/task-memory
   queue:
