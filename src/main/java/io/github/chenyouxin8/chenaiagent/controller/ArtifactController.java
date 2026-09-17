@@ -59,7 +59,10 @@ public class ArtifactController {
     ) {
         ChenTask task = authorizedTask(taskId, tenantId, userId, httpRequest);
         Artifact artifact = findArtifact(task, artifactId);
-        return buildResponse(artifact, resolveSafePath(artifact.getPath()), ContentDisposition.attachment());
+        return buildResponse(
+                artifact,
+                resolveSafePath(artifact.getPath()),
+                ContentDisposition.attachment().filename(artifact.getName()).build());
     }
 
     @GetMapping("/{artifactId}/preview")
@@ -79,7 +82,10 @@ public class ArtifactController {
                 || mediaType.getType().equals("text"))) {
             throw new ResponseStatusException(NOT_FOUND, "该产物类型不支持浏览器预览，请下载后打开");
         }
-        return buildResponse(artifact, file, ContentDisposition.inline());
+        return buildResponse(
+                artifact,
+                file,
+                ContentDisposition.inline().filename(artifact.getName()).build());
     }
 
     private ChenTask authorizedTask(
@@ -112,7 +118,7 @@ public class ArtifactController {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(parseMediaType(artifact.getMediaType()));
         headers.setContentLength(artifact.getSizeBytes() > 0 ? artifact.getSizeBytes() : fileSize(file));
-        headers.setContentDisposition(disposition.filename(artifact.getName()).build());
+        headers.setContentDisposition(disposition);
         headers.set("X-Artifact-Version", String.valueOf(artifact.getVersion()));
         headers.set("X-Content-Type-Options", "nosniff");
         if (artifact.getChecksum() != null && !artifact.getChecksum().isBlank()) {
@@ -122,7 +128,9 @@ public class ArtifactController {
     }
 
     private Path resolveSafePath(String rawPath) {
-        if (rawPath == null || rawPath.isBlank()) throw new ResponseStatusException(NOT_FOUND, "产物不存在");
+        if (rawPath == null || rawPath.isBlank()) {
+            throw new ResponseStatusException(NOT_FOUND, "产物不存在");
+        }
         if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) {
             throw new ResponseStatusException(NOT_FOUND, "仅支持本地交付产物");
         }
