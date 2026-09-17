@@ -8,6 +8,8 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -99,9 +101,7 @@ public class TaskRuntimeService {
 
             for (int repairRound = 0; !decision.passed() && repairRound < MAX_REPAIR_ROUNDS; repairRound++) {
                 TaskStep repairStep = createRepairStep(task, decision);
-                if (!runStepWithRetry(task, repairStep)) {
-                    break;
-                }
+                if (!runStepWithRetry(task, repairStep)) break;
                 taskManager.updateStatus(task, TaskStatus.REVIEWING, "补救步骤完成，Reviewer 正在二次验收");
                 taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始二次审核"));
                 decision = reviewer.review(task);
@@ -139,18 +139,65 @@ public class TaskRuntimeService {
     }
 
     private boolean runPendingSteps(ChenTask task) {
-        for (TaskStep step : task.getSteps()) {
+        int index = 0;
+        while (index < task.getSteps().size()) {
             if (isStopped(task)) return false;
-            if (step.getStatus() == StepStatus.COMPLETED || step.getStatus() == StepStatus.SKIPPED) continue;
 
-            taskManager.updateStatus(task, TaskStatus.RUNNING, "执行：" + step.getTitle());
-            boolean success = runStepWithRetry(task, step);
+            TaskStep current = task.getSteps().get(index);
+            if (current.getStatus() == StepStatus.COMPLETED || current.getStatus() == StepStatus.SKIPPED) {
+                index++;
+                continue;
+            }
+
+            if (current.isParallelizable()) {
+                List<TaskStep> parallelSteps = new ArrayList<>();
+                int cursor = index;
+                while (cursor < task.getSteps().size()) {
+                    TaskStep candidate = task.getSteps().get(cursor);
+                    if (candidate.getStatus() == StepStatus.COMPLETED || candidate.getStatus() == StepStatus.SKIPPED) {
+                        cursor++;
+                        continue;
+                    }
+                    if (!candidate.isParallelizable()) break;
+                    parallelSteps.add(candidate);
+                    cursor++;
+                }
+
+                if (parallelSteps.size() > 1) {
+                    taskManager.updateStatus(task, TaskStatus.RUNNING, "并行执行 " + parallelSteps.size() + " 个独立步骤");
+                    taskManager.publish(new TaskEvent(
+                            task.getTaskId(), TaskEventType.MESSAGE, null,
+                            "启动并行步骤：" + parallelSteps.stream().map(TaskStep::getTitle).collect(Collectors.joining("、"))
+                    ));
+
+                    List<CompletableFuture<Boolean>> futures = parallelSteps.stream()
+                            .map(step -> CompletableFuture.supplyAsync(() -> runStepWithRetry(task, step)))
+                            .toList();
+                    boolean allSucceeded = futures.stream().allMatch(CompletableFuture::join);
+                    taskManager.save(task);
+                    if (!allSucceeded) {
+                        TaskStep failed = parallelSteps.stream()
+                                .filter(step -> step.getStatus() == StepStatus.FAILED)
+                                .findFirst()
+                                .orElse(parallelSteps.get(0));
+                        task.setError(failed.getError());
+                        taskManager.updateStatus(task, TaskStatus.FAILED, "并行步骤失败：" + failed.getTitle());
+                        return false;
+                    }
+                    index = cursor;
+                    continue;
+                }
+            }
+
+            taskManager.updateStatus(task, TaskStatus.RUNNING, "执行：" + current.getTitle());
+            boolean success = runStepWithRetry(task, current);
             if (!success) {
-                task.setError(step.getError());
+                task.setError(current.getError());
                 taskManager.save(task);
-                taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + step.getTitle());
+                taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + current.getTitle());
                 return false;
             }
+            index++;
         }
         return true;
     }
@@ -175,12 +222,13 @@ public class TaskRuntimeService {
                     task.getTaskId() + "_step_" + sequence,
                     sequence,
                     planStep.title().trim(),
-                    enrichedDescription
+                    enrichedDescription,
+                    planStep.parallelizable()
             ));
             taskManager.publish(new TaskEvent(
                     task.getTaskId(), TaskEventType.STEP_PLANNED,
                     task.getTaskId() + "_step_" + sequence,
-                    planStep.title().trim()
+                    planStep.title().trim() + (planStep.parallelizable() ? "（可并行）" : "")
             ));
         }
         task.touch();
@@ -194,7 +242,8 @@ public class TaskRuntimeService {
                 task.getTaskId() + "_step_" + sequence,
                 sequence,
                 "补救与修正",
-                "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback
+                "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback,
+                false
         );
         task.getSteps().add(repairStep);
         taskManager.save(task);
@@ -288,7 +337,7 @@ public class TaskRuntimeService {
 
                 规则：
                 1. 只关注当前步骤，但要利用已有步骤结果和历史任务记忆。
-                2. 历史记忆只用于参考，不得把其中内容当成当前事实。
+                2. 历史记忆只用于参考，不得把其中内容当作当前事实。
                 3. 能使用工具时优先使用工具完成实际工作，而不是只给建议。
                 4. 不要伪造工具执行结果；无法完成时明确说明原因。
                 5. 当前步骤完成后，返回清晰、可验证的结果。
