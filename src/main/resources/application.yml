@@ -89,3 +89,5 @@ chenmanus:
   metrics:
     input-cost-per-1k: ${CHENMANUS_INPUT_COST_PER_1K:0.0}
     output-cost-per-1k: ${CHENMANUS_OUTPUT_COST_PER_1K:0.0}
+  artifacts:
+    allowed-root: ${CHENMANUS_ARTIFACT_ALLOWED_ROOT:.}
