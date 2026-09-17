@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS chen_tasks (
     duration_ms BIGINT NOT NULL DEFAULT 0,
     estimated_input_tokens BIGINT NOT NULL DEFAULT 0,
     estimated_output_tokens BIGINT NOT NULL DEFAULT 0,
+    actual_input_tokens BIGINT NOT NULL DEFAULT 0,
+    actual_output_tokens BIGINT NOT NULL DEFAULT 0,
+    model_call_count BIGINT NOT NULL DEFAULT 0,
     estimated_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     result TEXT,
     error TEXT,
@@ -28,6 +31,9 @@ ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS completed_at BIGINT NOT NULL DEF
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS duration_ms BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_input_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_output_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS actual_input_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS actual_output_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS model_call_count BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS estimated_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(128) NOT NULL DEFAULT 'default';
 ALTER TABLE chen_tasks ADD COLUMN IF NOT EXISTS owner_id VARCHAR(128) NOT NULL DEFAULT 'anonymous';
@@ -54,6 +60,9 @@ CREATE TABLE IF NOT EXISTS chen_task_steps (
     depends_on VARCHAR(255) NOT NULL DEFAULT '',
     estimated_input_tokens BIGINT NOT NULL DEFAULT 0,
     estimated_output_tokens BIGINT NOT NULL DEFAULT 0,
+    actual_input_tokens BIGINT NOT NULL DEFAULT 0,
+    actual_output_tokens BIGINT NOT NULL DEFAULT 0,
+    model_call_count BIGINT NOT NULL DEFAULT 0,
     CONSTRAINT fk_task_step_task FOREIGN KEY (task_id) REFERENCES chen_tasks(task_id) ON DELETE CASCADE
 );
 
@@ -62,6 +71,9 @@ ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS parallelizable BOOLEAN NOT 
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS depends_on VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS estimated_input_tokens BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS estimated_output_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS actual_input_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS actual_output_tokens BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE chen_task_steps ADD COLUMN IF NOT EXISTS model_call_count BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS chen_task_artifacts (
     artifact_id VARCHAR(128) PRIMARY KEY,
@@ -73,9 +85,11 @@ CREATE TABLE IF NOT EXISTS chen_task_artifacts (
     version INT NOT NULL DEFAULT 1,
     size_bytes BIGINT NOT NULL DEFAULT 0,
     media_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream',
+    checksum VARCHAR(128),
     CONSTRAINT fk_task_artifact_task FOREIGN KEY (task_id) REFERENCES chen_tasks(task_id) ON DELETE CASCADE
 );
 
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS media_type VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream';
+ALTER TABLE chen_task_artifacts ADD COLUMN IF NOT EXISTS checksum VARCHAR(128);
