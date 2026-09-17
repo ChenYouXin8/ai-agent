@@ -21,7 +21,7 @@ public class TaskRepository {
                 SELECT task_id, prompt, title, status, created_at, updated_at,
                        started_at, completed_at, duration_ms,
                        estimated_input_tokens, estimated_output_tokens, estimated_cost,
-                       result, error, plan_summary, owner_id, session_id,
+                       result, error, plan_summary, tenant_id, owner_id, session_id, priority,
                        review_passed, review_feedback, review_missing_items
                 FROM chen_tasks ORDER BY created_at DESC
                 """, taskRowMapper());
@@ -34,14 +34,15 @@ public class TaskRepository {
                 UPDATE chen_tasks SET prompt=?, title=?, status=?, updated_at=?,
                     started_at=?, completed_at=?, duration_ms=?,
                     estimated_input_tokens=?, estimated_output_tokens=?, estimated_cost=?,
-                    result=?, error=?, plan_summary=?, owner_id=?, session_id=?,
+                    result=?, error=?, plan_summary=?, tenant_id=?, owner_id=?, session_id=?, priority=?,
                     review_passed=?, review_feedback=?, review_missing_items=?
                 WHERE task_id=?
                 """,
                 task.getPrompt(), task.getTitle(), task.getStatus().name(), task.getUpdatedAt(),
                 task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
                 task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(), task.getEstimatedCost(),
-                task.getResult(), task.getError(), task.getPlanSummary(), task.getOwnerId(), task.getSessionId(),
+                task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
+                task.getSessionId(), task.getPriority().name(),
                 task.getReview() == null ? null : task.getReview().passed(),
                 task.getReview() == null ? null : task.getReview().feedback(),
                 task.getReview() == null ? null : task.getReview().missingItems(),
@@ -52,14 +53,15 @@ public class TaskRepository {
                         task_id, prompt, title, status, created_at, updated_at,
                         started_at, completed_at, duration_ms,
                         estimated_input_tokens, estimated_output_tokens, estimated_cost,
-                        result, error, plan_summary, owner_id, session_id,
+                        result, error, plan_summary, tenant_id, owner_id, session_id, priority,
                         review_passed, review_feedback, review_missing_items
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     task.getTaskId(), task.getPrompt(), task.getTitle(), task.getStatus().name(),
                     task.getCreatedAt(), task.getUpdatedAt(), task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
                     task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(), task.getEstimatedCost(),
-                    task.getResult(), task.getError(), task.getPlanSummary(), task.getOwnerId(), task.getSessionId(),
+                    task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
+                    task.getSessionId(), task.getPriority().name(),
                     task.getReview() == null ? null : task.getReview().passed(),
                     task.getReview() == null ? null : task.getReview().feedback(),
                     task.getReview() == null ? null : task.getReview().missingItems());
@@ -84,11 +86,11 @@ public class TaskRepository {
         jdbc.update("DELETE FROM chen_task_artifacts WHERE task_id = ?", task.getTaskId());
         for (Artifact artifact : task.getArtifacts()) {
             jdbc.update("""
-                    INSERT INTO chen_task_artifacts (artifact_id, task_id, name, type, path, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO chen_task_artifacts (artifact_id, task_id, name, type, path, created_at, version, size_bytes, media_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     artifact.getArtifactId(), task.getTaskId(), artifact.getName(), artifact.getType(),
-                    artifact.getPath(), artifact.getCreatedAt());
+                    artifact.getPath(), artifact.getCreatedAt(), artifact.getVersion(), artifact.getSizeBytes(), artifact.getMediaType());
         }
     }
 
@@ -105,7 +107,7 @@ public class TaskRepository {
                 """, taskStepRowMapper(), task.getTaskId()));
 
         task.getArtifacts().addAll(jdbc.query("""
-                SELECT artifact_id, name, type, path, created_at
+                SELECT artifact_id, name, type, path, created_at, version, size_bytes, media_type
                 FROM chen_task_artifacts WHERE task_id = ? ORDER BY created_at
                 """, artifactRowMapper(), task.getTaskId()));
     }
@@ -126,8 +128,10 @@ public class TaskRepository {
             task.setResult(rs.getString("result"));
             task.setError(rs.getString("error"));
             task.setPlanSummary(rs.getString("plan_summary"));
+            task.setTenantId(rs.getString("tenant_id"));
             task.setOwnerId(rs.getString("owner_id"));
             task.setSessionId(rs.getString("session_id"));
+            task.setPriority(TaskPriority.from(rs.getString("priority")));
             boolean reviewPassed = rs.getBoolean("review_passed");
             if (!rs.wasNull()) {
                 task.setReview(new ReviewDecision(reviewPassed, rs.getString("review_feedback"), rs.getString("review_missing_items")));
@@ -155,9 +159,15 @@ public class TaskRepository {
     }
 
     private RowMapper<Artifact> artifactRowMapper() {
-        return (rs, rowNum) -> new Artifact(
-                rs.getString("artifact_id"), rs.getString("name"), rs.getString("type"),
-                rs.getString("path"), rs.getLong("created_at"));
+        return (rs, rowNum) -> {
+            Artifact artifact = new Artifact(
+                    rs.getString("artifact_id"), rs.getString("name"), rs.getString("type"),
+                    rs.getString("path"), rs.getLong("created_at"));
+            artifact.setVersion(rs.getInt("version"));
+            artifact.setSizeBytes(rs.getLong("size_bytes"));
+            artifact.setMediaType(rs.getString("media_type"));
+            return artifact;
+        };
     }
 
     private String encodeDependencies(List<Integer> dependencies) {
