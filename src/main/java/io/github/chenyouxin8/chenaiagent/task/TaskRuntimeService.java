@@ -292,6 +292,7 @@ public class TaskRuntimeService {
                 TaskEventType type = switch (phase) {
                     case "started" -> TaskEventType.TOOL_STARTED;
                     case "completed" -> TaskEventType.TOOL_COMPLETED;
+                    case "failed" -> TaskEventType.TOOL_FAILED;
                     default -> TaskEventType.MESSAGE;
                 };
                 taskManager.publish(new TaskEvent(
@@ -311,7 +312,9 @@ public class TaskRuntimeService {
             step.setError(e.getMessage());
             step.setStatus(StepStatus.FAILED);
             taskManager.save(task);
-            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_FAILED, step.getStepId(), e.getMessage()));
+            taskManager.publish(new TaskEvent(
+                    task.getTaskId(), TaskEventType.STEP_FAILED, step.getStepId(), e.getMessage()
+            ));
             throw e;
         } finally {
             step.setCompletedAt(System.currentTimeMillis());
