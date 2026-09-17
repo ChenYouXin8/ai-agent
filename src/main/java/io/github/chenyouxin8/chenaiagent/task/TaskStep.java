@@ -23,6 +23,8 @@ public class TaskStep implements Serializable {
     private int retryCount;
     private boolean parallelizable;
     private List<Integer> dependsOn = new ArrayList<>();
+    private ApprovalStatus approvalStatus = ApprovalStatus.NONE;
+    private String approvalNote;
     private long estimatedInputTokens;
     private long estimatedOutputTokens;
     private long actualInputTokens;
@@ -30,19 +32,26 @@ public class TaskStep implements Serializable {
     private long modelCallCount;
 
     public TaskStep(String stepId, int sequence, String title, String description) {
-        this(stepId, sequence, title, description, false, List.of());
+        this(stepId, sequence, title, description, false, List.of(), ApprovalStatus.NONE);
     }
 
     public TaskStep(String stepId, int sequence, String title, String description, boolean parallelizable) {
-        this(stepId, sequence, title, description, parallelizable, List.of());
+        this(stepId, sequence, title, description, parallelizable, List.of(), ApprovalStatus.NONE);
     }
 
-    public TaskStep(String stepId, int sequence, String title, String description, boolean parallelizable, List<Integer> dependsOn) {
+    public TaskStep(String stepId, int sequence, String title, String description,
+                    boolean parallelizable, List<Integer> dependsOn) {
+        this(stepId, sequence, title, description, parallelizable, dependsOn, ApprovalStatus.NONE);
+    }
+
+    public TaskStep(String stepId, int sequence, String title, String description,
+                    boolean parallelizable, List<Integer> dependsOn, ApprovalStatus approvalStatus) {
         this.stepId = stepId;
         this.sequence = sequence;
         this.title = title;
         this.description = description;
         this.parallelizable = parallelizable;
         if (dependsOn != null) this.dependsOn = new ArrayList<>(dependsOn);
+        this.approvalStatus = approvalStatus == null ? ApprovalStatus.NONE : approvalStatus;
     }
 }
