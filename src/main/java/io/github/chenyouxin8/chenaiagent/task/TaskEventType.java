@@ -9,6 +9,7 @@ public enum TaskEventType {
     STEP_RETRY,
     STEP_COMPLETED,
     STEP_FAILED,
+    AGENT_HANDOFF,
     TOOL_STARTED,
     TOOL_COMPLETED,
     TOOL_FAILED,
@@ -21,5 +22,6 @@ public enum TaskEventType {
     TASK_RESUMED,
     TASK_CANCELLED,
     TASK_COMPLETED,
-    TASK_FAILED
+    TASK_FAILED,
+    TASK_DEAD_LETTERED
 }
