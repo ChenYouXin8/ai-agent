@@ -35,25 +35,20 @@ public class RequestIdentityService {
     }
 
     public String userId(HttpServletRequest request, String candidate) {
-        if (oauth2Enabled) {
-            Authentication authentication = authenticated();
-            return normalize(authentication.getName(), "anonymous");
-        }
+        if (oauth2Enabled) return normalize(authenticated().getName(), "anonymous");
         return resolve(request, USER_HEADER, candidate, "anonymous");
     }
 
     public boolean isAdmin(HttpServletRequest request) {
         if (!oauth2Enabled) return false;
-        Authentication authentication = authenticated();
-        return authentication.getAuthorities().stream()
+        return authenticated().getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_TENANT_ADMIN".equalsIgnoreCase(authority.getAuthority())
                         || "ROLE_PLATFORM_ADMIN".equalsIgnoreCase(authority.getAuthority()));
     }
 
     public boolean isPlatformAdmin(HttpServletRequest request) {
         if (!oauth2Enabled) return false;
-        Authentication authentication = authenticated();
-        return authentication.getAuthorities().stream()
+        return authenticated().getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_PLATFORM_ADMIN".equalsIgnoreCase(authority.getAuthority()));
     }
 
