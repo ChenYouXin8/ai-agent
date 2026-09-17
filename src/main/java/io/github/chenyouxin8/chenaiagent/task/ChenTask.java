@@ -28,8 +28,10 @@ public class ChenTask implements Serializable {
     private volatile String error;
     private volatile String planSummary;
     private volatile ReviewDecision review;
+    private String tenantId = "default";
     private String ownerId = "anonymous";
     private String sessionId = "default";
+    private TaskPriority priority = TaskPriority.NORMAL;
 
     public ChenTask(String taskId, String prompt) {
         this.taskId = taskId;
