@@ -67,7 +67,9 @@ public class TaskController {
             HttpServletRequest httpRequest
     ) {
         String effectiveTenant = identityService.tenantId(httpRequest, tenantId);
-        String effectiveUser = identityService.userId(httpRequest, userId);
+        String effectiveUser = identityService.isAdmin(httpRequest)
+                ? null
+                : identityService.userId(httpRequest, userId);
         return ApiResponse.ok(taskManager.list(effectiveTenant, effectiveUser, sessionId));
     }
 
