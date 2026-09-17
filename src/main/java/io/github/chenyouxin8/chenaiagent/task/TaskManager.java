@@ -1,7 +1,6 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -19,7 +18,7 @@ public class TaskManager {
         this.repository = repository;
     }
 
-    @EventListener(ApplicationReadyEvent.class)
+    @PostConstruct
     public void restore() {
         try {
             repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task));
@@ -91,6 +90,7 @@ public class TaskManager {
 
     private TaskEventType eventType(TaskStatus status) {
         return switch (status) {
+            case QUEUED -> TaskEventType.TASK_QUEUED;
             case PAUSED -> TaskEventType.TASK_PAUSED;
             case RUNNING -> TaskEventType.TASK_RESUMED;
             case CANCELLED -> TaskEventType.TASK_CANCELLED;
