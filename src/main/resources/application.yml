@@ -82,6 +82,7 @@ chenmanus:
     require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
     oidc:
       issuer-uri: ${CHENMANUS_OIDC_ISSUER_URI:}
+      audience: ${CHENMANUS_OIDC_AUDIENCE:}
   memory:
     dir: ./data/task-memory
   queue:
