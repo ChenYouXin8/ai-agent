@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -17,6 +18,16 @@ public class TaskRepository {
             actual_input_tokens, actual_output_tokens, model_call_count, estimated_cost,
             result, error, plan_summary, tenant_id, owner_id, session_id, priority,
             review_passed, review_feedback, review_missing_items
+            """;
+
+    private static final String TASK_UPDATE = """
+            UPDATE chen_tasks SET prompt=?, title=?, status=?, updated_at=?,
+                started_at=?, completed_at=?, duration_ms=?,
+                estimated_input_tokens=?, estimated_output_tokens=?,
+                actual_input_tokens=?, actual_output_tokens=?, model_call_count=?, estimated_cost=?,
+                result=?, error=?, plan_summary=?, tenant_id=?, owner_id=?, session_id=?, priority=?,
+                review_passed=?, review_feedback=?, review_missing_items=?
+            WHERE task_id=?
             """;
 
     private final JdbcTemplate jdbc;
@@ -66,25 +77,7 @@ public class TaskRepository {
     }
 
     public synchronized void save(ChenTask task) {
-        int updated = jdbc.update("""
-                UPDATE chen_tasks SET prompt=?, title=?, status=?, updated_at=?,
-                    started_at=?, completed_at=?, duration_ms=?,
-                    estimated_input_tokens=?, estimated_output_tokens=?,
-                    actual_input_tokens=?, actual_output_tokens=?, model_call_count=?, estimated_cost=?,
-                    result=?, error=?, plan_summary=?, tenant_id=?, owner_id=?, session_id=?, priority=?,
-                    review_passed=?, review_feedback=?, review_missing_items=?
-                WHERE task_id=?
-                """,
-                task.getPrompt(), task.getTitle(), task.getStatus().name(), task.getUpdatedAt(),
-                task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
-                task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(),
-                task.getActualInputTokens(), task.getActualOutputTokens(), task.getModelCallCount(), task.getEstimatedCost(),
-                task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
-                task.getSessionId(), task.getPriority().name(),
-                task.getReview() == null ? null : task.getReview().passed(),
-                task.getReview() == null ? null : task.getReview().feedback(),
-                task.getReview() == null ? null : task.getReview().missingItems(),
-                task.getTaskId());
+        int updated = jdbc.update(TASK_UPDATE, taskUpdateParams(task));
         if (updated == 0) {
             jdbc.update("""
                     INSERT INTO chen_tasks (
@@ -106,7 +99,22 @@ public class TaskRepository {
                     task.getReview() == null ? null : task.getReview().feedback(),
                     task.getReview() == null ? null : task.getReview().missingItems());
         }
+        writeChildren(task);
+    }
 
+    // 条件更新（CAS）：仅当数据库中任务仍处于 expectedStatus 才写入；0 行更新说明状态已被并发修改，整次保存拒绝并回滚
+    public synchronized void save(ChenTask task, TaskStatus expectedStatus) {
+        Object[] base = taskUpdateParams(task);
+        Object[] params = Arrays.copyOf(base, base.length + 1);
+        params[base.length] = expectedStatus.name();
+        int updated = jdbc.update(TASK_UPDATE + " AND status=?", params);
+        if (updated == 0) {
+            throw new IllegalStateException("任务状态已被并发修改，本次操作未生效：" + task.getTaskId());
+        }
+        writeChildren(task);
+    }
+
+    private void writeChildren(ChenTask task) {
         jdbc.update("DELETE FROM chen_task_steps WHERE task_id = ?", task.getTaskId());
         for (TaskStep step : task.getSteps()) {
             jdbc.update("""
@@ -138,6 +146,21 @@ public class TaskRepository {
                     artifact.getPath(), artifact.getCreatedAt(), artifact.getVersion(), artifact.getSizeBytes(),
                     artifact.getMediaType(), artifact.getChecksum());
         }
+    }
+
+    private Object[] taskUpdateParams(ChenTask task) {
+        return new Object[]{
+                task.getPrompt(), task.getTitle(), task.getStatus().name(), task.getUpdatedAt(),
+                task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
+                task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(),
+                task.getActualInputTokens(), task.getActualOutputTokens(), task.getModelCallCount(), task.getEstimatedCost(),
+                task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
+                task.getSessionId(), task.getPriority().name(),
+                task.getReview() == null ? null : task.getReview().passed(),
+                task.getReview() == null ? null : task.getReview().feedback(),
+                task.getReview() == null ? null : task.getReview().missingItems(),
+                task.getTaskId()
+        };
     }
 
     public void appendEvent(TaskEvent event) {

@@ -22,15 +22,15 @@ public class TaskApprovalService {
         if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
             throw new IllegalStateException("当前任务没有待审批步骤");
         }
+        registerApprovalSynchronization(taskId, task.getPriority(), true);
         step.setApprovalStatus(ApprovalStatus.APPROVED);
         step.setApprovalNote(normalize(note));
         task.setStatus(TaskStatus.QUEUED);
-        taskManager.save(task);
+        taskManager.save(task, TaskStatus.WAITING_USER);
         taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_GRANTED, step.getStepId(),
                 message("审批通过：", step, actorId)));
         taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_QUEUED, null,
                 "人工审批通过，任务重新进入执行队列"));
-        enqueueAfterCommit(taskId, task.getPriority());
     }
 
     @Transactional
@@ -40,44 +40,33 @@ public class TaskApprovalService {
         if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
             throw new IllegalStateException("当前任务没有待审批步骤");
         }
+        registerApprovalSynchronization(taskId, task.getPriority(), false);
         step.setApprovalStatus(ApprovalStatus.REJECTED);
         step.setApprovalNote(normalize(note));
         task.setError("人工审批驳回：" + step.getTitle()
                 + (step.getApprovalNote().isBlank() ? "" : "；" + step.getApprovalNote()));
         task.setStatus(TaskStatus.CANCELLED);
-        taskManager.save(task);
+        taskManager.save(task, TaskStatus.WAITING_USER);
         taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_REJECTED, step.getStepId(),
                 message("审批驳回：", step, actorId)));
         taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_CANCELLED, null,
                 "任务因人工审批驳回而结束"));
-        reloadOnRollback(taskId);
     }
 
-    // 入队是事务外的队列副作用：若在提交前入队，事务回滚后 worker 会消费内存中的脏状态（QUEUED/APPROVED）执行未审批步骤
-    private void enqueueAfterCommit(String taskId, TaskPriority priority) {
+    // 并发防护分两层：TaskManager.get 返回共享实例，同 JVM 并发请求会被前置状态检查拦截；
+    // 跨实例/交错场景由 save(task, WAITING_USER) 的条件更新兜底，后到方抛 IllegalStateException 回滚。
+    // 事务同步须在修改内存聚合之前注册：提交后才入队（入队是事务外副作用），回滚/守卫失败后从数据库重载内存状态。
+    private void registerApprovalSynchronization(String taskId, TaskPriority priority, boolean enqueueOnCommit) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            queueService.enqueue(taskId, priority);
+            if (enqueueOnCommit) queueService.enqueue(taskId, priority);
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCompletion(int status) {
                 if (status == TransactionSynchronization.STATUS_COMMITTED) {
-                    queueService.enqueue(taskId, priority);
+                    if (enqueueOnCommit) queueService.enqueue(taskId, priority);
                 } else {
-                    taskManager.reload(taskId);
-                }
-            }
-        });
-    }
-
-    // 回滚后内存聚合停留在 CANCELLED/REJECTED，需用数据库的 WAITING_USER 状态覆盖，任务才能被再次审批
-    private void reloadOnRollback(String taskId) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != TransactionSynchronization.STATUS_COMMITTED) {
                     taskManager.reload(taskId);
                 }
             }

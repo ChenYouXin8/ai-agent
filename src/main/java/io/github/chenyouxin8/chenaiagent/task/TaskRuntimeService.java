@@ -98,36 +98,6 @@ public class TaskRuntimeService {
         }
     }
 
-    public void approve(String taskId, String note) {
-        ChenTask task = taskManager.get(taskId);
-        TaskStep step = pendingApprovalStep(task);
-        if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
-            throw new IllegalStateException("当前任务没有待审批步骤");
-        }
-        step.setApprovalStatus(ApprovalStatus.APPROVED);
-        step.setApprovalNote(note == null ? "" : note.trim());
-        taskManager.save(task);
-        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_GRANTED,
-                step.getStepId(), "审批通过：" + step.getTitle()));
-        start(taskId);
-    }
-
-    public void reject(String taskId, String note) {
-        ChenTask task = taskManager.get(taskId);
-        TaskStep step = pendingApprovalStep(task);
-        if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
-            throw new IllegalStateException("当前任务没有待审批步骤");
-        }
-        step.setApprovalStatus(ApprovalStatus.REJECTED);
-        step.setApprovalNote(note == null ? "" : note.trim());
-        task.setError("人工审批驳回：" + step.getTitle() +
-                (step.getApprovalNote() == null || step.getApprovalNote().isBlank() ? "" : "；" + step.getApprovalNote()));
-        taskManager.save(task);
-        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_REJECTED,
-                step.getStepId(), "审批驳回：" + step.getTitle()));
-        taskManager.updateStatus(task, TaskStatus.CANCELLED, "任务因人工审批驳回而结束");
-    }
-
     public void runNow(String taskId) {
         execute(taskManager.get(taskId));
     }
@@ -408,13 +378,6 @@ public class TaskRuntimeService {
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
                     step.getStepId(), formatStepMetrics(step)));
         }
-    }
-
-    private TaskStep pendingApprovalStep(ChenTask task) {
-        return task.getSteps().stream()
-                .filter(step -> step.getApprovalStatus() == ApprovalStatus.PENDING)
-                .findFirst()
-                .orElse(null);
     }
 
     private String buildStepPrompt(ChenTask task, TaskStep step, AgentAssignment assignment) {

@@ -76,6 +76,13 @@ public class TaskManager {
         repository.save(task);
     }
 
+    // 条件保存：数据库中任务仍为 expectedStatus 才写入，用于审批这类不允许并发交错的状态转移
+    public void save(ChenTask task, TaskStatus expectedStatus) {
+        TaskTenantContext.set(task.getTenantId());
+        task.touch();
+        repository.save(task, expectedStatus);
+    }
+
     public void publish(TaskEvent event) {
         try { repository.appendEvent(event); }
         catch (RuntimeException ignored) { }

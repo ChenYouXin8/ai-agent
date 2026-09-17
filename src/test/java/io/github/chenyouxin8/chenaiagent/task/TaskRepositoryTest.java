@@ -104,6 +104,39 @@ class TaskRepositoryTest {
     }
 
     @Test
+    void guardedSaveOnlyPersistsWhenExpectedStatusMatches() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_guarded_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
+        ChenTask task = new ChenTask("task_guarded", "发布上线");
+        task.setStatus(TaskStatus.WAITING_USER);
+        TaskStep step = new TaskStep("task_guarded_step_1", 1, "发布", "发布到生产环境",
+                false, List.of(), ApprovalStatus.PENDING);
+        task.getSteps().add(step);
+        repository.save(task);
+
+        task.setStatus(TaskStatus.QUEUED);
+        step.setApprovalStatus(ApprovalStatus.APPROVED);
+        step.setApprovalNote("确认发布");
+        assertThrows(IllegalStateException.class, () -> repository.save(task, TaskStatus.RUNNING));
+
+        ChenTask untouched = repository.find("task_guarded");
+        assertEquals(TaskStatus.WAITING_USER, untouched.getStatus());
+        assertEquals(ApprovalStatus.PENDING, untouched.getSteps().get(0).getApprovalStatus());
+
+        repository.save(task, TaskStatus.WAITING_USER);
+
+        ChenTask approved = repository.find("task_guarded");
+        assertEquals(TaskStatus.QUEUED, approved.getStatus());
+        assertEquals(ApprovalStatus.APPROVED, approved.getSteps().get(0).getApprovalStatus());
+        assertEquals("确认发布", approved.getSteps().get(0).getApprovalNote());
+    }
+
+    @Test
     void shouldCountActiveTasksByTenant() {
         JdbcDataSource dataSource = new JdbcDataSource();
         dataSource.setURL("jdbc:h2:mem:task_quota_test;DB_CLOSE_DELAY=-1");

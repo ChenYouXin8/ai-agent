@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -49,7 +50,7 @@ class TaskApprovalServiceTest {
         assertEquals(ApprovalStatus.APPROVED, step.getApprovalStatus());
         assertEquals("确认发布", step.getApprovalNote());
         assertEquals(TaskStatus.QUEUED, task.getStatus());
-        verify(manager).save(task);
+        verify(manager).save(task, TaskStatus.WAITING_USER);
 
         ArgumentCaptor<TaskEvent> events = ArgumentCaptor.forClass(TaskEvent.class);
         verify(manager, times(2)).publishRequired(events.capture());
@@ -73,7 +74,7 @@ class TaskApprovalServiceTest {
 
         assertThrows(IllegalStateException.class,
                 () -> new TaskApprovalService(manager, queue).approve("task_approval", "", "admin-1"));
-        verify(manager, never()).save(any());
+        verify(manager, never()).save(any(), any());
         verify(queue, never()).enqueue(any(), any());
     }
 
@@ -87,7 +88,7 @@ class TaskApprovalServiceTest {
 
         assertThrows(IllegalStateException.class,
                 () -> new TaskApprovalService(manager, queue).approve("task_approval", "", "admin-1"));
-        verify(manager, never()).save(any());
+        verify(manager, never()).save(any(), any());
         verify(queue, never()).enqueue(any(), any());
     }
 
@@ -109,7 +110,7 @@ class TaskApprovalServiceTest {
         ArgumentCaptor<TaskEvent> events = ArgumentCaptor.forClass(TaskEvent.class);
         verify(manager, times(2)).publishRequired(events.capture());
         assertTrue(events.getAllValues().get(0).getMessage().contains("actor=anonymous"));
-        verify(manager).save(task);
+        verify(manager).save(task, TaskStatus.WAITING_USER);
         verify(queue, never()).enqueue(any(), any());
     }
 
@@ -174,6 +175,55 @@ class TaskApprovalServiceTest {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
             }
             verify(manager).reload("task_approval");
+            verify(queue, never()).enqueue(any(), any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void rejectCommitDoesNotEnqueueOrReload() {
+        TaskManager manager = mock(TaskManager.class);
+        TaskQueueService queue = mock(TaskQueueService.class);
+        ChenTask task = waitingTask();
+        when(manager.get("task_approval")).thenReturn(task);
+        TaskApprovalService service = new TaskApprovalService(manager, queue);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.reject("task_approval", "信息不足", "admin-1");
+
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+            }
+            verify(queue, never()).enqueue(any(), any());
+            verify(manager, never()).reload(any());
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void approveReloadsMemoryWhenGuardedSaveDetectsConcurrentModification() {
+        TaskManager manager = mock(TaskManager.class);
+        TaskQueueService queue = mock(TaskQueueService.class);
+        ChenTask task = waitingTask();
+        when(manager.get("task_approval")).thenReturn(task);
+        doThrow(new IllegalStateException("任务状态已被并发修改，本次操作未生效：task_approval"))
+                .when(manager).save(any(ChenTask.class), any(TaskStatus.class));
+        TaskApprovalService service = new TaskApprovalService(manager, queue);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> service.approve("task_approval", "确认发布", "admin-1"));
+            verify(manager, never()).publishRequired(any());
+
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+            verify(manager).reload("task_approval");
+            verify(queue, never()).enqueue(any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

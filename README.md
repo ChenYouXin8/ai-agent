@@ -10,6 +10,8 @@ Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：�
 
 事务语义：批准产生的重新入队发生在事务**提交之后**（`afterCompletion` 回调），事务回滚时不会入队，且内存中的任务状态会自动从数据库恢复，避免 worker 消费回滚后的脏状态。
 
+并发防护：审批状态转移使用条件更新（CAS）写入——仅当数据库中任务仍为 `WAITING_USER` 时生效。并发双审、审批与驳回/取消交错时，后到的一方会因状态已变更而失败回滚（HTTP 409），不会产生重复审批事件、重复入队或"已批准步骤 + 已取消任务"的矛盾状态。
+
 审批权限：`CHENMANUS_SECURITY_MODE=oauth2` 时仅 `TENANT_ADMIN` / `PLATFORM_ADMIN` 可审批；legacy 模式整体无鉴权（permitAll），审批接口同样放行。
 
 审计历史：
