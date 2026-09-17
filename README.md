@@ -31,7 +31,7 @@ pip install chromadb
 chroma run --host 127.0.0.1 --port 8000
 
 # 克隆
- git clone https://github.com/ChenYouXin8/ai-agent.git
+git clone https://github.com/ChenYouXin8/ai-agent.git
 cd ai-agent
 
 # 配置
@@ -77,7 +77,7 @@ curl -X POST http://localhost:8123/api/tasks \
 curl -N http://localhost:8123/api/tasks/task_xxxxxxxxxxxx/events
 ```
 
-## Agent 架构
+## ChenManus 架构
 
 ```text
 User
