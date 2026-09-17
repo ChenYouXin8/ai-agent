@@ -24,9 +24,11 @@ public class TaskMetricsService {
     public void finishTask(ChenTask task) {
         task.setCompletedAt(System.currentTimeMillis());
         task.setDurationMs(Math.max(0L, task.getCompletedAt() - task.getStartedAt()));
+        long inputTokens = task.getActualInputTokens() > 0 ? task.getActualInputTokens() : task.getEstimatedInputTokens();
+        long outputTokens = task.getActualOutputTokens() > 0 ? task.getActualOutputTokens() : task.getEstimatedOutputTokens();
         task.setEstimatedCost(
-                task.getEstimatedInputTokens() / 1000.0 * inputCostPer1k
-                        + task.getEstimatedOutputTokens() / 1000.0 * outputCostPer1k
+                inputTokens / 1000.0 * inputCostPer1k
+                        + outputTokens / 1000.0 * outputCostPer1k
         );
     }
 
@@ -37,6 +39,18 @@ public class TaskMetricsService {
         step.setEstimatedOutputTokens(step.getEstimatedOutputTokens() + outputTokens);
         task.setEstimatedInputTokens(task.getEstimatedInputTokens() + inputTokens);
         task.setEstimatedOutputTokens(task.getEstimatedOutputTokens() + outputTokens);
+    }
+
+    public void recordActualUsage(ChenTask task, TaskStep step, long inputTokens, long outputTokens, long modelCalls) {
+        long safeInput = Math.max(0L, inputTokens);
+        long safeOutput = Math.max(0L, outputTokens);
+        long safeCalls = Math.max(0L, modelCalls);
+        step.setActualInputTokens(step.getActualInputTokens() + safeInput);
+        step.setActualOutputTokens(step.getActualOutputTokens() + safeOutput);
+        step.setModelCallCount(step.getModelCallCount() + safeCalls);
+        task.setActualInputTokens(task.getActualInputTokens() + safeInput);
+        task.setActualOutputTokens(task.getActualOutputTokens() + safeOutput);
+        task.setModelCallCount(task.getModelCallCount() + safeCalls);
     }
 
     public long estimateTokens(String text) {
