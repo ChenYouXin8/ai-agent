@@ -84,6 +84,8 @@ chenmanus:
     poll-ms: ${CHENMANUS_QUEUE_POLL_MS:250}
   lock:
     redis-enabled: ${CHENMANUS_REDIS_ENABLED:false}
+  runtime:
+    max-parallel-steps: ${CHENMANUS_MAX_PARALLEL_STEPS:4}
   metrics:
     input-cost-per-1k: ${CHENMANUS_INPUT_COST_PER_1K:0.0}
     output-cost-per-1k: ${CHENMANUS_OUTPUT_COST_PER_1K:0.0}
