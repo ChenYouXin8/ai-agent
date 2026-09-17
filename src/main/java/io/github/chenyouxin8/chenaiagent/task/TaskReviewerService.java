@@ -1,6 +1,7 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.ResponseEntity;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Service;
 
@@ -42,21 +43,21 @@ public class TaskReviewerService {
                 """.formatted(task.getPrompt(), outputs.isBlank() ? "（没有有效执行结果）" : outputs);
 
         try {
-            var responseSpec = chatClient.prompt()
+            ResponseEntity<org.springframework.ai.chat.model.ChatResponse, ReviewDecision> response = chatClient.prompt()
                     .system(SYSTEM_PROMPT)
                     .user(prompt)
-                    .call();
-            ReviewDecision decision = responseSpec.entity(ReviewDecision.class, spec -> spec.validateSchema());
-            var response = responseSpec.chatResponse();
-            if (response != null && response.getMetadata() != null && response.getMetadata().getUsage() != null) {
-                var usage = response.getMetadata().getUsage();
+                    .call()
+                    .responseEntity(ReviewDecision.class, spec -> spec.validateSchema());
+            org.springframework.ai.chat.model.ChatResponse chatResponse = response.getResponse();
+            if (chatResponse != null && chatResponse.getMetadata() != null && chatResponse.getMetadata().getUsage() != null) {
+                var usage = chatResponse.getMetadata().getUsage();
                 metricsService.recordActualUsage(
                         task,
                         usage.getPromptTokens() == null ? 0L : usage.getPromptTokens(),
                         usage.getCompletionTokens() == null ? 0L : usage.getCompletionTokens(),
                         1L);
             }
-            return decision == null ? ReviewDecision.fallback("审核器未返回结果") : decision;
+            return response.getEntity() == null ? ReviewDecision.fallback("审核器未返回结果") : response.getEntity();
         } catch (Exception e) {
             return ReviewDecision.fallback("审核器暂不可用，已完成基础结果检查");
         }
