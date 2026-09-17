@@ -76,6 +76,10 @@ public class TaskManager {
                 .toList();
     }
 
+    public List<TaskEvent> history(String taskId, int limit) {
+        return repository.findEvents(taskId, limit);
+    }
+
     public void save(ChenTask task) {
         TaskTenantContext.set(task.getTenantId());
         task.touch();
@@ -83,6 +87,11 @@ public class TaskManager {
     }
 
     public void publish(TaskEvent event) {
+        try {
+            repository.appendEvent(event);
+        } catch (RuntimeException ignored) {
+            // Audit log is best-effort; never stop the Agent because event persistence failed.
+        }
         List<Consumer<TaskEvent>> taskListeners = listeners.get(event.getTaskId());
         if (taskListeners != null) taskListeners.forEach(listener -> listener.accept(event));
     }
