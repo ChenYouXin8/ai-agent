@@ -10,13 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * 接口鉴权拦截器
- *
- * 验证请求头中的 Bearer Token：
- * - 请求头格式：Authorization: Bearer <token>
- * - token 与配置文件中的 spring.security.api-key 一致则放行
- * - 未配置 api-key 时跳过验证（开发模式）
- * - 静态资源、错误路径、OPTIONS 预检请求跳过验证
+ * Legacy API-key interceptor. Disabled when OAuth2 security mode is active;
+ * JWT authentication is then handled by Spring Security.
  */
 @Component
 @Slf4j
@@ -28,11 +23,14 @@ public class SecurityInterceptor implements HandlerInterceptor {
     @Value("${spring.security.api-key:}")
     private String configuredApiKey;
 
+    @Value("${chenmanus.security.mode:legacy}")
+    private String securityMode;
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        String path = request.getRequestURI();
+        if ("oauth2".equalsIgnoreCase(securityMode)) return true;
 
-        // 放行：静态资源、错误路径、OPTIONS 预检
+        String path = request.getRequestURI();
         if (path.startsWith("/api/swagger") ||
             path.startsWith("/api/v3/api-docs") ||
             path.startsWith("/api/webjars") ||
@@ -41,13 +39,11 @@ public class SecurityInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        // 未配置 api-key：开发模式，跳过验证
         if (configuredApiKey == null || configuredApiKey.isBlank()) {
             log.debug("API Key 未配置，跳过鉴权");
             return true;
         }
 
-        // 提取 Bearer Token
         String authHeader = request.getHeader(AUTH_HEADER);
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             writeUnauthorized(response, "缺少 Authorization 头或格式错误，请使用：Authorization: Bearer <token>");
@@ -56,12 +52,9 @@ public class SecurityInterceptor implements HandlerInterceptor {
 
         String token = authHeader.substring(BEARER_PREFIX.length()).trim();
         if (!configuredApiKey.equals(token)) {
-            log.warn("鉴权失败：Token 不匹配，来源 IP={}", request.getRemoteAddr());
             writeUnauthorized(response, "Token 无效");
             return false;
         }
-
-        log.debug("鉴权通过：{}", request.getRemoteAddr());
         return true;
     }
 
@@ -71,7 +64,7 @@ public class SecurityInterceptor implements HandlerInterceptor {
         response.setCharacterEncoding("UTF-8");
         ApiResponse<?> error = ApiResponse.error(40100, message);
         response.getWriter().write(
-            "{\"code\":40100,\"message\":\"" + message + "\",\"data\":null}"
+            "{\"code\":40100,\"message\":\"" + error.getMessage() + "\",\"data\":null}"
         );
     }
 }
