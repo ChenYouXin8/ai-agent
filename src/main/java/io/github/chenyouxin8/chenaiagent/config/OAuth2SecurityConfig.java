@@ -9,6 +9,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -50,6 +52,17 @@ public class OAuth2SecurityConfig {
     }
 
     @Bean
+    JwtDecoder chenManusJwtDecoder(
+            @Value("${chenmanus.security.oidc.issuer-uri:}") String issuerUri
+    ) {
+        if (!oauth2Enabled()) return null;
+        if (issuerUri == null || issuerUri.isBlank()) {
+            throw new IllegalStateException("OAuth2 模式必须配置 CHENMANUS_OIDC_ISSUER_URI");
+        }
+        return JwtDecoders.fromIssuerLocation(issuerUri);
+    }
+
+    @Bean
     Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
         return jwt -> new JwtAuthenticationToken(jwt, authorities(jwt), jwt.getSubject());
     }
@@ -67,6 +80,7 @@ public class OAuth2SecurityConfig {
                     .map(value -> new SimpleGrantedAuthority(value.startsWith("ROLE_") ? value : "ROLE_" + value))
                     .forEach(authorities::add);
         }
+        if (authorities.isEmpty()) authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
         return authorities;
     }
 
