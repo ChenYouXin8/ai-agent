@@ -64,7 +64,7 @@ public class SecurityInterceptor implements HandlerInterceptor {
         response.setCharacterEncoding("UTF-8");
         ApiResponse<?> error = ApiResponse.error(40100, message);
         response.getWriter().write(
-            "{\"code\":40100,\"message\":\"" + error.getMessage() + "\",\"data\":null}"
+            "{\"code\":40100,\"message\":\"" + error.message() + "\",\"data\":null}"
         );
     }
 }
