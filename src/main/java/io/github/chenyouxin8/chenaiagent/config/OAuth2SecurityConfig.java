@@ -9,9 +9,12 @@ import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtAudienceValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -56,12 +59,21 @@ public class OAuth2SecurityConfig {
     @Bean
     @ConditionalOnProperty(name = "chenmanus.security.mode", havingValue = "oauth2")
     JwtDecoder chenManusJwtDecoder(
-            @Value("${chenmanus.security.oidc.issuer-uri:}") String issuerUri
+            @Value("${chenmanus.security.oidc.issuer-uri:}") String issuerUri,
+            @Value("${chenmanus.security.oidc.audience:}") String audience
     ) {
         if (issuerUri == null || issuerUri.isBlank()) {
             throw new IllegalStateException("OAuth2 模式必须配置 CHENMANUS_OIDC_ISSUER_URI");
         }
-        return JwtDecoders.fromIssuerLocation(issuerUri);
+        JwtDecoder decoder = JwtDecoders.fromIssuerLocation(issuerUri);
+        if (audience == null || audience.isBlank()) return decoder;
+        if (!(decoder instanceof org.springframework.security.oauth2.jwt.NimbusJwtDecoder nimbusDecoder)) {
+            throw new IllegalStateException("当前 JWT decoder 不支持 audience validator");
+        }
+        OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuerUri);
+        OAuth2TokenValidator<Jwt> withAudience = new JwtAudienceValidator(audience);
+        nimbusDecoder.setJwtValidator(new org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator<>(withIssuer, withAudience));
+        return nimbusDecoder;
     }
 
     @Bean
