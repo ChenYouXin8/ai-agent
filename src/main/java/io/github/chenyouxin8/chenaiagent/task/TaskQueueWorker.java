@@ -58,12 +58,20 @@ public class TaskQueueWorker {
             return;
         }
 
-        // Duplicate queue messages are harmless: only the lock holder executes the task.
         if (!lockService.tryLock(taskId, Duration.ofMinutes(15))) return;
         try {
             runtime.runNow(taskId);
+            ChenTask finished = taskManager.get(taskId);
+            if (finished.getStatus() == TaskStatus.FAILED) {
+                queue.deadLetter(taskId, finished.getError());
+                taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_DEAD_LETTERED, null,
+                        "任务已进入死信队列，可由管理员重放"));
+            }
         } catch (RuntimeException e) {
             log.error("ChenManus task worker failed for {}", taskId, e);
+            queue.deadLetter(taskId, e.getMessage());
+            taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_DEAD_LETTERED, null,
+                    "Worker 异常，任务已进入死信队列"));
         } finally {
             lockService.unlock(taskId);
         }
