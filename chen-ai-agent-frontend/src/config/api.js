@@ -1,4 +1,4 @@
-/** ChenManus 2.6 API */
+/** ChenManus 2.8 API */
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export const ENDPOINTS = {
