@@ -10,6 +10,7 @@ public enum TaskEventType {
     STEP_FAILED,
     TOOL_STARTED,
     TOOL_COMPLETED,
+    TOOL_FAILED,
     MESSAGE,
     ARTIFACT_CREATED,
     REVIEW_STARTED,
