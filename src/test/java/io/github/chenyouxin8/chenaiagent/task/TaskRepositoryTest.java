@@ -27,7 +27,7 @@ class TaskRepositoryTest {
         task.setSessionId("session-a");
         task.setPlanSummary("测试计划");
 
-        TaskStep step = new TaskStep("task_test_001_step_1", 1, "执行", "完成测试");
+        TaskStep step = new TaskStep("task_test_001_step_1", 1, "执行", "完成测试", true);
         step.setStatus(StepStatus.COMPLETED);
         step.setOutput("执行结果");
         step.setRetryCount(1);
@@ -45,6 +45,7 @@ class TaskRepositoryTest {
         assertEquals("session-a", result.getSessionId());
         assertEquals(1, result.getSteps().size());
         assertEquals("执行结果", result.getSteps().get(0).getOutput());
+        assertTrue(result.getSteps().get(0).isParallelizable());
         assertEquals(1, result.getArtifacts().size());
         assertEquals("result.pdf", result.getArtifacts().get(0).getName());
         assertNotNull(result.getReview());
