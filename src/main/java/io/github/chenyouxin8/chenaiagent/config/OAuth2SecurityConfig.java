@@ -34,7 +34,7 @@ public class OAuth2SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/swagger/**", "/v3/api-docs/**", "/webjars/**", "/error", "/actuator/health").permitAll();
                     if (oauth2Enabled()) {
-                        auth.requestMatchers("/tasks/quota").hasAnyRole("TENANT_ADMIN", "PLATFORM_ADMIN");
+                        auth.requestMatchers("/tasks/quota", "/tasks/admin/**").hasAnyRole("TENANT_ADMIN", "PLATFORM_ADMIN");
                         auth.requestMatchers("/tasks/**").authenticated();
                         auth.anyRequest().authenticated();
                     } else {
