@@ -64,20 +64,22 @@ services:
       AI_DASHSCOPE_API_KEY: "${AI_DASHSCOPE_API_KEY}"
       API_KEY: "${API_KEY:-}"
       SEARCH_API_KEY: "${SEARCH_API_KEY:-}"
-      SPRING_PROFILES_ACTIVE: "local"
+      SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-local}"
       DATABASE_URL: "jdbc:postgresql://postgres:5432/chenmanus"
       DATABASE_USERNAME: "chenmanus"
       DATABASE_PASSWORD: "${POSTGRES_PASSWORD:-chenmanus}"
       DATABASE_DRIVER: "org.postgresql.Driver"
       REDIS_URL: "redis://redis:6379"
-      CHENMANUS_REDIS_ENABLED: "true"
+      CHENMANUS_REDIS_ENABLED: "${CHENMANUS_REDIS_ENABLED:-true}"
       CHENMANUS_QUEUE_KEY: "chenmanus:tasks"
       CHENMANUS_QUEUE_POLL_MS: "250"
       CHENMANUS_MAX_PARALLEL_STEPS: "${CHENMANUS_MAX_PARALLEL_STEPS:-4}"
       CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT: "${CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT:-20}"
-      CHENMANUS_ARTIFACT_ALLOWED_ROOT: "/app"
+      CHENMANUS_ARTIFACT_ALLOWED_ROOT: "/app/data"
       CHENMANUS_INPUT_COST_PER_1K: "${CHENMANUS_INPUT_COST_PER_1K:-0.0}"
       CHENMANUS_OUTPUT_COST_PER_1K: "${CHENMANUS_OUTPUT_COST_PER_1K:-0.0}"
+      OAUTH2_ISSUER_URI: "${OAUTH2_ISSUER_URI:-}"
+      OAUTH2_AUDIENCE: "${OAUTH2_AUDIENCE:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +91,7 @@ services:
     volumes:
       - ./data/chat-memory:/app/.chat-memory
       - ./data/task-memory:/app/data/task-memory
+      - ./data/artifacts:/app/data/artifacts
 
   # ---------- 5. Vue frontend ----------
   frontend:
