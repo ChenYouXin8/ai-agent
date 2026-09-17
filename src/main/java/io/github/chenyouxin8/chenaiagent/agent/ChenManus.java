@@ -57,7 +57,9 @@ public class ChenManus extends ToolCallAgent {
         } catch (Exception e) {
             this.setState(AgentState.ERROR);
             log.error("执行失败", e);
-            return "执行失败: " + e.getMessage();
+            throw e instanceof RuntimeException runtimeException
+                    ? runtimeException
+                    : new IllegalStateException("Agent 执行失败", e);
         } finally {
             cleanup();
         }
