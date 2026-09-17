@@ -48,9 +48,13 @@ public class TaskMetricsService {
         step.setActualInputTokens(step.getActualInputTokens() + safeInput);
         step.setActualOutputTokens(step.getActualOutputTokens() + safeOutput);
         step.setModelCallCount(step.getModelCallCount() + safeCalls);
-        task.setActualInputTokens(task.getActualInputTokens() + safeInput);
-        task.setActualOutputTokens(task.getActualOutputTokens() + safeOutput);
-        task.setModelCallCount(task.getModelCallCount() + safeCalls);
+        recordActualUsage(task, safeInput, safeOutput, safeCalls);
+    }
+
+    public void recordActualUsage(ChenTask task, long inputTokens, long outputTokens, long modelCalls) {
+        task.setActualInputTokens(task.getActualInputTokens() + Math.max(0L, inputTokens));
+        task.setActualOutputTokens(task.getActualOutputTokens() + Math.max(0L, outputTokens));
+        task.setModelCallCount(task.getModelCallCount() + Math.max(0L, modelCalls));
     }
 
     public long estimateTokens(String text) {
