@@ -23,6 +23,9 @@ public class ChenTask implements Serializable {
     private volatile long durationMs;
     private volatile long estimatedInputTokens;
     private volatile long estimatedOutputTokens;
+    private volatile long actualInputTokens;
+    private volatile long actualOutputTokens;
+    private volatile long modelCallCount;
     private volatile double estimatedCost;
     private volatile String result;
     private volatile String error;
