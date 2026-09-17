@@ -93,11 +93,7 @@ public class TaskController {
             @RequestParam(required = false) String userId,
             HttpServletRequest httpRequest
     ) {
-        ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(
-                task,
-                identityService.tenantId(httpRequest, tenantId),
-                identityService.userId(httpRequest, userId));
+        ChenTask task = authorize(taskId, tenantId, userId, httpRequest);
         return ApiResponse.ok(task);
     }
 
@@ -108,11 +104,7 @@ public class TaskController {
             @RequestParam(required = false) String userId,
             HttpServletRequest httpRequest
     ) {
-        ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(
-                task,
-                identityService.tenantId(httpRequest, tenantId),
-                identityService.userId(httpRequest, userId));
+        authorize(taskId, tenantId, userId, httpRequest);
         runtime.pause(taskId);
         return ApiResponse.ok(taskManager.get(taskId));
     }
@@ -124,12 +116,42 @@ public class TaskController {
             @RequestParam(required = false) String userId,
             HttpServletRequest httpRequest
     ) {
-        ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(
-                task,
-                identityService.tenantId(httpRequest, tenantId),
-                identityService.userId(httpRequest, userId));
+        authorize(taskId, tenantId, userId, httpRequest);
         runtime.resume(taskId);
+        return ApiResponse.ok(taskManager.get(taskId));
+    }
+
+    @PostMapping("/{taskId}/approve")
+    public ApiResponse<ChenTask> approve(
+            @PathVariable String taskId,
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String userId,
+            @RequestBody(required = false) ApprovalRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        authorize(taskId, tenantId, userId, httpRequest);
+        if (!identityService.isAdmin(httpRequest)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "当前身份没有人工审批权限");
+        }
+        runtime.approve(taskId, request == null ? "" : request.note());
+        return ApiResponse.ok(taskManager.get(taskId));
+    }
+
+    @PostMapping("/{taskId}/reject")
+    public ApiResponse<ChenTask> reject(
+            @PathVariable String taskId,
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String userId,
+            @RequestBody(required = false) ApprovalRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        authorize(taskId, tenantId, userId, httpRequest);
+        if (!identityService.isAdmin(httpRequest)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "当前身份没有人工审批权限");
+        }
+        runtime.reject(taskId, request == null ? "" : request.note());
         return ApiResponse.ok(taskManager.get(taskId));
     }
 
@@ -140,13 +162,21 @@ public class TaskController {
             @RequestParam(required = false) String userId,
             HttpServletRequest httpRequest
     ) {
-        ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(
-                task,
-                identityService.tenantId(httpRequest, tenantId),
-                identityService.userId(httpRequest, userId));
+        authorize(taskId, tenantId, userId, httpRequest);
         runtime.cancel(taskId);
         return ApiResponse.ok(taskManager.get(taskId));
+    }
+
+    @GetMapping("/{taskId}/events/history")
+    public ApiResponse<List<TaskEvent>> eventHistory(
+            @PathVariable String taskId,
+            @RequestParam(required = false, defaultValue = "200") int limit,
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String userId,
+            HttpServletRequest httpRequest
+    ) {
+        authorize(taskId, tenantId, userId, httpRequest);
+        return ApiResponse.ok(taskManager.history(taskId, limit));
     }
 
     @GetMapping("/{taskId}/events")
@@ -156,11 +186,7 @@ public class TaskController {
             @RequestParam(required = false) String userId,
             HttpServletRequest httpRequest
     ) {
-        ChenTask task = taskManager.get(taskId);
-        scopeService.assertAccess(
-                task,
-                identityService.tenantId(httpRequest, tenantId),
-                identityService.userId(httpRequest, userId));
+        authorize(taskId, tenantId, userId, httpRequest);
         SseEmitter emitter = new SseEmitter(0L);
         Consumer<TaskEvent> listener = event -> {
             try {
@@ -173,12 +199,24 @@ public class TaskController {
         emitter.onCompletion(() -> taskManager.unsubscribe(taskId, listener));
         emitter.onTimeout(() -> taskManager.unsubscribe(taskId, listener));
         try {
+            for (TaskEvent event : taskManager.history(taskId, 200)) {
+                emitter.send(SseEmitter.event().name(event.getType().name().toLowerCase()).data(event));
+            }
             emitter.send(SseEmitter.event().name("connected")
-                    .data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.8 实时事件流")));
+                    .data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.9 审计事件流")));
         } catch (IOException e) {
             emitter.completeWithError(e);
         }
         return emitter;
+    }
+
+    private ChenTask authorize(String taskId, String tenantId, String userId, HttpServletRequest request) {
+        ChenTask task = taskManager.get(taskId);
+        scopeService.assertAccess(
+                task,
+                identityService.tenantId(request, tenantId),
+                identityService.userId(request, userId));
+        return task;
     }
 
     public record CreateTaskRequest(
@@ -189,5 +227,6 @@ public class TaskController {
             String priority
     ) {}
 
+    public record ApprovalRequest(String note) {}
     public record QuotaView(String tenantId, int activeTasks, int maxActiveTasksPerTenant) {}
 }
