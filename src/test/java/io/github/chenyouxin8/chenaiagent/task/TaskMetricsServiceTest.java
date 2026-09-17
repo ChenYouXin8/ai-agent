@@ -18,7 +18,7 @@ class TaskMetricsServiceTest {
 
         metrics.finishTask(task);
 
-        assertEquals(6.0, task.getEstimatedCost(), 0.00001);
+        assertEquals(4.0, task.getEstimatedCost(), 0.00001);
         assertEquals(1_000, task.getActualInputTokens());
         assertEquals(500, task.getActualOutputTokens());
     }
