@@ -3,7 +3,6 @@ package io.github.chenyouxin8.chenaiagent.planner;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +27,8 @@ public class LlmPlanner {
             - A step may have multiple dependencies when it combines independent work.
             - Mark parallelizable=true only when all its dependencies are satisfied and it is safe to run concurrently with other ready steps.
             - Typical parallelizable steps are independent research/source collection tasks; synthesis, coding that edits the same files, editing and final validation should normally be false.
+            - Set requiresApproval=true only for consequential external side effects or irreversible changes that should require explicit human confirmation before execution (for example publishing/sending, deleting important files/data, deploying, purchasing, or changing production configuration).
+            - Set requiresApproval=false for normal research, analysis, drafting, local read-only inspection and reversible work.
             - Use types such as RESEARCH, ANALYSIS, CODE, DOCUMENT, FILE, WEB, GENERAL.
             - The plan must be useful even when the task does not need external tools.
             """;
@@ -51,13 +52,19 @@ public class LlmPlanner {
                     .responseEntity(Plan.class, spec -> spec.validateSchema());
 
             Plan plan = response == null ? null : response.getEntity();
-            Usage usage = usageOf(response == null ? null : response.getResponse());
-            if (plan == null || plan.steps() == null) return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
+            Usage usage = response == null || response.getResponse() == null || response.getResponse().getMetadata() == null
+                    ? null : response.getResponse().getMetadata().getUsage();
+            if (plan == null || plan.steps() == null) {
+                return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
+            }
+
             List<PlanStep> raw = plan.steps().stream()
                     .filter(step -> step != null && step.title() != null && !step.title().isBlank())
                     .limit(6)
                     .toList();
-            if (raw.isEmpty()) return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
+            if (raw.isEmpty()) {
+                return new PlanResult(fallback(userPrompt), usageInput(usage), usageOutput(usage), usage == null ? 0 : 1);
+            }
 
             List<PlanStep> normalized = new ArrayList<>();
             for (int i = 0; i < raw.size(); i++) {
@@ -65,9 +72,7 @@ public class LlmPlanner {
                 Set<Integer> dependencies = new HashSet<>();
                 if (step.dependsOn() != null) {
                     for (Integer dependency : step.dependsOn()) {
-                        if (dependency != null && dependency >= 1 && dependency <= i) {
-                            dependencies.add(dependency);
-                        }
+                        if (dependency != null && dependency >= 1 && dependency <= i) dependencies.add(dependency);
                     }
                 }
                 normalized.add(new PlanStep(
@@ -76,7 +81,8 @@ public class LlmPlanner {
                         step.type(),
                         step.expectedOutput(),
                         dependencies.stream().sorted().toList(),
-                        step.parallelizable()
+                        step.parallelizable(),
+                        step.requiresApproval()
                 ));
             }
 
@@ -92,10 +98,6 @@ public class LlmPlanner {
         }
     }
 
-    private Usage usageOf(ChatResponse response) {
-        return response == null || response.getMetadata() == null ? null : response.getMetadata().getUsage();
-    }
-
     private long usageInput(Usage usage) {
         return usage == null || usage.getPromptTokens() == null ? 0L : usage.getPromptTokens().longValue();
     }
@@ -108,7 +110,7 @@ public class LlmPlanner {
         return new Plan(
                 prompt.length() > 32 ? prompt.substring(0, 32) + "..." : prompt,
                 "模型规划不可用时使用的安全兜底计划",
-                List.of(new PlanStep("完成用户任务", prompt, "GENERAL", "返回满足用户要求的最终结果", List.of(), false))
+                List.of(new PlanStep("完成用户任务", prompt, "GENERAL", "返回满足用户要求的最终结果", List.of(), false, false))
         );
     }
 
