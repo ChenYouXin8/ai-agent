@@ -16,6 +16,7 @@ public class ChenTask {
     private volatile long updatedAt = createdAt;
     private volatile String result;
     private volatile String error;
+    private volatile String planSummary;
 
     public void touch() {
         updatedAt = System.currentTimeMillis();
