@@ -4,9 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class TaskQueueService {
@@ -14,7 +13,8 @@ public class TaskQueueService {
     private final StringRedisTemplate redis;
     private final boolean redisEnabled;
     private final String queueKey;
-    private final BlockingQueue<String> localQueue = new LinkedBlockingQueue<>();
+    private final PriorityBlockingQueue<QueueItem> localQueue = new PriorityBlockingQueue<>();
+    private final AtomicLong sequence = new AtomicLong();
 
     public TaskQueueService(
             StringRedisTemplate redis,
@@ -27,29 +27,50 @@ public class TaskQueueService {
     }
 
     public void enqueue(String taskId) {
+        enqueue(taskId, TaskPriority.NORMAL);
+    }
+
+    public void enqueue(String taskId, TaskPriority priority) {
+        TaskPriority effective = priority == null ? TaskPriority.NORMAL : priority;
         if (redisEnabled) {
             try {
-                redis.opsForList().rightPush(queueKey, taskId);
+                redis.opsForList().rightPush(redisKey(effective), taskId);
                 return;
             } catch (RuntimeException ignored) {
                 // Redis is optional in development; fall back to local queue.
             }
         }
-        localQueue.offer(taskId);
+        localQueue.offer(new QueueItem(taskId, effective, sequence.incrementAndGet()));
     }
 
     public String poll() {
-        String local = localQueue.poll();
-        if (local != null) return local;
+        QueueItem local = localQueue.poll();
+        if (local != null) return local.taskId();
         if (!redisEnabled) return null;
-        try {
-            return redis.opsForList().leftPop(queueKey, Duration.ofMillis(100));
-        } catch (RuntimeException ignored) {
-            return null;
+        for (TaskPriority priority : TaskPriority.values()) {
+            try {
+                String taskId = redis.opsForList().leftPop(redisKey(priority));
+                if (taskId != null) return taskId;
+            } catch (RuntimeException ignored) {
+                return null;
+            }
         }
+        return null;
     }
 
     public boolean isRedisEnabled() {
         return redisEnabled;
+    }
+
+    private String redisKey(TaskPriority priority) {
+        return queueKey + ":" + priority.name().toLowerCase();
+    }
+
+    private record QueueItem(String taskId, TaskPriority priority, long sequence) implements Comparable<QueueItem> {
+        @Override
+        public int compareTo(QueueItem other) {
+            int byPriority = Integer.compare(other.priority.getWeight(), priority.getWeight());
+            return byPriority != 0 ? byPriority : Long.compare(sequence, other.sequence);
+        }
     }
 }
