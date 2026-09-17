@@ -2,8 +2,12 @@ package io.github.chenyouxin8.chenaiagent.task;
 
 import lombok.Data;
 
+import java.io.Serializable;
+
 @Data
-public class TaskStep {
+public class TaskStep implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final String stepId;
     private final int sequence;
     private final String title;
