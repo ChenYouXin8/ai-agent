@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
 public class ArtifactService {
 
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^]]+)\\]\\(([^)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt))\\)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PATH = Pattern.compile("(?<!https?://)(?:\\./|data/|/)[^\\s)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt)", Pattern.CASE_INSENSITIVE);
+    // [A-Za-z]:[\\/] 匹配 Windows 盘符绝对路径（C:\ 或 C:/）——否则 Windows 上的绝对路径工具输出无法被捕获为 Artifact
+    private static final Pattern PATH = Pattern.compile("(?<!https?://)(?:[A-Za-z]:[\\\\/]|\\./|data/|/)[^\\s)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt)", Pattern.CASE_INSENSITIVE);
 
     public void capture(ChenTask task, String output, TaskManager taskManager) {
         if (output == null || output.isBlank()) return;

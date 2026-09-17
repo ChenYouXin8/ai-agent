@@ -4,12 +4,25 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
 class ArtifactServiceTest {
+
+    @Test
+    void detectsWindowsAndUnixStylePathsInOutput() {
+        ChenTask task = new ChenTask("task_artifact_paths", "paths");
+        TaskManager taskManager = mock(TaskManager.class);
+        ArtifactService service = new ArtifactService();
+
+        service.capture(task, "生成 C:\\reports\\summary.pdf, /var/log/run.csv, ./data/result.xlsx", taskManager);
+
+        List<String> paths = task.getArtifacts().stream().map(Artifact::getPath).toList();
+        assertEquals(List.of("C:\\reports\\summary.pdf", "/var/log/run.csv", "./data/result.xlsx"), paths);
+    }
 
     @Test
     void shouldCreateChecksumAndBumpVersionWhenArtifactContentChanges() throws Exception {
