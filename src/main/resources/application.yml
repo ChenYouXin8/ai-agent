@@ -77,8 +77,11 @@ search-api:
 
 chenmanus:
   security:
+    mode: ${CHENMANUS_SECURITY_MODE:legacy}
     trust-identity-headers: ${CHENMANUS_TRUST_IDENTITY_HEADERS:false}
     require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
+    oidc:
+      issuer-uri: ${CHENMANUS_OIDC_ISSUER_URI:}
   memory:
     dir: ./data/task-memory
   queue:
