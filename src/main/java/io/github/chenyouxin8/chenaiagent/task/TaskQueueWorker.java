@@ -36,13 +36,27 @@ public class TaskQueueWorker {
                         || task.getStatus() == TaskStatus.PLANNING
                         || task.getStatus() == TaskStatus.RUNNING
                         || task.getStatus() == TaskStatus.REVIEWING)
-                .forEach(task -> queue.enqueue(task.getTaskId()));
+                .forEach(task -> queue.enqueue(task.getTaskId(), task.getPriority()));
     }
 
     @Scheduled(fixedDelayString = "${chenmanus.queue.poll-ms:250}")
     public void poll() {
         String taskId = queue.poll();
         if (taskId == null) return;
+
+        ChenTask task;
+        try {
+            task = taskManager.get(taskId);
+        } catch (RuntimeException e) {
+            log.warn("Ignoring stale ChenManus queue item {}", taskId);
+            return;
+        }
+        if (task.getStatus() != TaskStatus.QUEUED
+                && task.getStatus() != TaskStatus.PLANNING
+                && task.getStatus() != TaskStatus.RUNNING
+                && task.getStatus() != TaskStatus.REVIEWING) {
+            return;
+        }
 
         // Duplicate queue messages are harmless: only the lock holder executes the task.
         if (!lockService.tryLock(taskId, Duration.ofMinutes(15))) return;
