@@ -76,6 +76,11 @@ search-api:
   api-key: ${SEARCH_API_KEY}
 
 chenmanus:
+  security:
+    # 开发模式默认继续兼容 body/query 中的 tenantId/userId。
+    # 生产环境建议由认证网关注入可信身份头并打开这两个开关。
+    trust-identity-headers: ${CHENMANUS_TRUST_IDENTITY_HEADERS:false}
+    require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
   memory:
     dir: ./data/task-memory
   queue:
@@ -92,4 +97,4 @@ chenmanus:
     input-cost-per-1k: ${CHENMANUS_INPUT_COST_PER_1K:0.0}
     output-cost-per-1k: ${CHENMANUS_OUTPUT_COST_PER_1K:0.0}
   artifacts:
-    allowed-root: ${CHENMANUS_ARTIFACT_ALLOWED_ROOT:.}
+    allowed-root: ${CHENMANUS_ARTIFACT_ALLOWED_ROOT:./data}
