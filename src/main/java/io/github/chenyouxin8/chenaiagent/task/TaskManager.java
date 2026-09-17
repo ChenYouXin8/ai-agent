@@ -52,6 +52,7 @@ public class TaskManager {
     public ChenTask get(String taskId) {
         ChenTask task = tasks.get(taskId);
         if (task == null) throw new NoSuchElementException("任务不存在: " + taskId);
+        TaskTenantContext.set(task.getTenantId());
         return task;
     }
 
@@ -76,6 +77,7 @@ public class TaskManager {
     }
 
     public void save(ChenTask task) {
+        TaskTenantContext.set(task.getTenantId());
         task.touch();
         repository.save(task);
     }
@@ -95,6 +97,7 @@ public class TaskManager {
     }
 
     public void updateStatus(ChenTask task, TaskStatus status, String message) {
+        TaskTenantContext.set(task.getTenantId());
         task.setStatus(status);
         save(task);
         publish(new TaskEvent(task.getTaskId(), eventType(status), null, message));
