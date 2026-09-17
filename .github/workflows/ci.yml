@@ -23,7 +23,7 @@ jobs:
       - name: Run offline unit tests
         run: |
           chmod +x mvnw
-          ./mvnw -q -Dtest=FileBasedChatMemoryTest,FileOperationToolTest,TaskRepositoryTest,AgentRolePromptServiceTest test
+          ./mvnw -q -Dtest=FileBasedChatMemoryTest,FileOperationToolTest,TaskRepositoryTest,TaskQuotaServiceTest,TaskQueueServiceTest,TaskMetricsServiceTest,AgentRolePromptServiceTest test
 
   frontend:
     runs-on: ubuntu-latest
