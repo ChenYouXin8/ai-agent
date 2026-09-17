@@ -4,7 +4,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -65,6 +67,36 @@ public class TaskRepository {
                 """, taskEventRowMapper(), taskId, max).stream()
                 .sorted(java.util.Comparator.comparingLong(TaskEvent::getTimestamp))
                 .toList();
+    }
+
+    // 审计查询：过滤条件必须先于 LIMIT 在数据库执行；若先取最近 500 条再内存过滤，
+    // 更早的历史事件（如埋在大量工具事件下的审批记录）将永远无法检索
+    public List<TaskEvent> findEvents(String taskId, TaskAuditQuery query) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT event_id, task_id, type, step_id, message, created_at
+                FROM chen_task_events
+                WHERE task_id = ? AND created_at >= ? AND created_at <= ?
+                """);
+        List<Object> params = new ArrayList<>();
+        params.add(taskId);
+        params.add(query.from());
+        params.add(query.to());
+        if (!query.types().isEmpty()) {
+            sql.append(" AND type IN (")
+                    .append(String.join(",", Collections.nCopies(query.types().size(), "?")))
+                    .append(")");
+            for (TaskEventType type : query.types()) params.add(type.name());
+        }
+        if (query.stepId() != null && !query.stepId().isBlank()) {
+            sql.append(" AND step_id = ?");
+            params.add(query.stepId());
+        }
+        sql.append(" ORDER BY created_at DESC LIMIT ?");
+        params.add(query.limit());
+
+        List<TaskEvent> events = jdbc.query(sql.toString(), taskEventRowMapper(), params.toArray());
+        Collections.reverse(events);
+        return events;
     }
 
     public int countActiveTasks(String tenantId) {

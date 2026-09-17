@@ -137,6 +137,53 @@ class TaskRepositoryTest {
     }
 
     @Test
+    void filteredEventHistoryAppliesFiltersBeforeLimit() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_audit_filter_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
+        ChenTask task = new ChenTask("task_audit_filter", "audit");
+        repository.save(task);
+
+        // 一条时间戳最早、埋在 500 条更新事件之下的审批事件
+        repository.appendEvent(new TaskEvent("e_old_approval", "task_audit_filter",
+                TaskEventType.TASK_APPROVAL_GRANTED, "step-1", "actor=admin-1", 1000L));
+        for (int i = 0; i < 500; i++) {
+            repository.appendEvent(new TaskEvent("e_msg_" + i, "task_audit_filter",
+                    TaskEventType.MESSAGE, null, "message " + i, 1100L + i));
+        }
+
+        // 类型过滤能触达 500 条之外的历史事件（旧实现先取最近 500 条会返回空）
+        List<TaskEvent> approvals = repository.findEvents("task_audit_filter",
+                new TaskAuditQuery(200, 0L, Long.MAX_VALUE, List.of(TaskEventType.TASK_APPROVAL_GRANTED), null));
+        assertEquals(1, approvals.size());
+        assertEquals("e_old_approval", approvals.get(0).getEventId());
+
+        // stepId 过滤
+        List<TaskEvent> stepEvents = repository.findEvents("task_audit_filter",
+                new TaskAuditQuery(200, 0L, Long.MAX_VALUE, List.of(), "step-1"));
+        assertEquals(1, stepEvents.size());
+        assertEquals("e_old_approval", stepEvents.get(0).getEventId());
+
+        // 时间窗口过滤（1200..1300 含端点共 101 条，升序返回）
+        List<TaskEvent> windowed = repository.findEvents("task_audit_filter",
+                new TaskAuditQuery(500, 1200L, 1300L, List.of(), null));
+        assertEquals(101, windowed.size());
+        assertEquals(1200L, windowed.get(0).getTimestamp());
+        assertEquals(1300L, windowed.get(windowed.size() - 1).getTimestamp());
+
+        // limit 取最近 N 条并以时间升序返回（消息时间戳 1100..1599）
+        List<TaskEvent> limited = repository.findEvents("task_audit_filter",
+                new TaskAuditQuery(3, 0L, Long.MAX_VALUE, List.of(), null));
+        assertEquals(3, limited.size());
+        assertEquals(1597L, limited.get(0).getTimestamp());
+        assertEquals(1599L, limited.get(2).getTimestamp());
+    }
+
+    @Test
     void shouldCountActiveTasksByTenant() {
         JdbcDataSource dataSource = new JdbcDataSource();
         dataSource.setURL("jdbc:h2:mem:task_quota_test;DB_CLOSE_DELAY=-1");

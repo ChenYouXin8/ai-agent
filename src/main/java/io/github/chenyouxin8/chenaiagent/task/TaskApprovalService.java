@@ -27,9 +27,9 @@ public class TaskApprovalService {
         step.setApprovalNote(normalize(note));
         task.setStatus(TaskStatus.QUEUED);
         taskManager.save(task, TaskStatus.WAITING_USER);
-        taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_GRANTED, step.getStepId(),
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_GRANTED, step.getStepId(),
                 message("审批通过：", step, actorId)));
-        taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_QUEUED, null,
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_QUEUED, null,
                 "人工审批通过，任务重新进入执行队列"));
     }
 
@@ -47,9 +47,9 @@ public class TaskApprovalService {
                 + (step.getApprovalNote().isBlank() ? "" : "；" + step.getApprovalNote()));
         task.setStatus(TaskStatus.CANCELLED);
         taskManager.save(task, TaskStatus.WAITING_USER);
-        taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_REJECTED, step.getStepId(),
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_REJECTED, step.getStepId(),
                 message("审批驳回：", step, actorId)));
-        taskManager.publishRequired(new TaskEvent(taskId, TaskEventType.TASK_CANCELLED, null,
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_CANCELLED, null,
                 "任务因人工审批驳回而结束"));
     }
 

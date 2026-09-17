@@ -83,13 +83,9 @@ public class TaskManager {
         repository.save(task, expectedStatus);
     }
 
+    // 事件持久化失败必须让调用方感知（事务内则随之回滚）：吞掉异常会导致 SSE 与审计历史分叉，
+    // 且 TASK_APPROVAL_REQUIRED 等关键事件静默丢失后审批环节在审计链上无迹可查
     public void publish(TaskEvent event) {
-        try { repository.appendEvent(event); }
-        catch (RuntimeException ignored) { }
-        publishToListeners(event);
-    }
-
-    public void publishRequired(TaskEvent event) {
         repository.appendEvent(event);
         publishToListeners(event);
     }

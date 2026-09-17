@@ -18,7 +18,7 @@ Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：�
 
 `GET /api/tasks/{taskId}/events/history?limit=200&from=...&to=...&types=TASK_APPROVAL_GRANTED,TASK_CANCELLED&stepId=...`
 
-返回持久化事件，审批事件 message 会包含 `actor=<user>`，SSE 与历史事件保持同一事件语义。
+返回持久化事件，审批事件 message 会包含 `actor=<user>`，SSE 与历史事件保持同一事件语义。所有任务事件（含 `TASK_APPROVAL_REQUIRED` 与步骤/工具事件）均强制持久化：写入失败会使当次操作失败并回滚，不会静默丢失。历史查询的 `from`/`to`/`types`/`stepId` 过滤在数据库侧先于条数限制执行，任意时间段的事件均可检索（单次最多返回 `limit` 条，上限 500）。
 
 可通过以下配置调整策略：
 

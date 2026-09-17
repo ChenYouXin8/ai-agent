@@ -53,7 +53,7 @@ class TaskApprovalServiceTest {
         verify(manager).save(task, TaskStatus.WAITING_USER);
 
         ArgumentCaptor<TaskEvent> events = ArgumentCaptor.forClass(TaskEvent.class);
-        verify(manager, times(2)).publishRequired(events.capture());
+        verify(manager, times(2)).publish(events.capture());
         List<TaskEvent> published = events.getAllValues();
         assertEquals(TaskEventType.TASK_APPROVAL_GRANTED, published.get(0).getType());
         assertEquals("task_approval_step_1", published.get(0).getStepId());
@@ -108,7 +108,7 @@ class TaskApprovalServiceTest {
         assertTrue(task.getError().contains("人工审批驳回"));
 
         ArgumentCaptor<TaskEvent> events = ArgumentCaptor.forClass(TaskEvent.class);
-        verify(manager, times(2)).publishRequired(events.capture());
+        verify(manager, times(2)).publish(events.capture());
         assertTrue(events.getAllValues().get(0).getMessage().contains("actor=anonymous"));
         verify(manager).save(task, TaskStatus.WAITING_USER);
         verify(queue, never()).enqueue(any(), any());
@@ -217,7 +217,7 @@ class TaskApprovalServiceTest {
         try {
             assertThrows(IllegalStateException.class,
                     () -> service.approve("task_approval", "确认发布", "admin-1"));
-            verify(manager, never()).publishRequired(any());
+            verify(manager, never()).publish(any());
 
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
