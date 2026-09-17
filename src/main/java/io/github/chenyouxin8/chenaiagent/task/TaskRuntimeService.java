@@ -303,10 +303,11 @@ public class TaskRuntimeService {
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_STARTED,
                 step.getStepId(), step.getTitle()));
 
+        ChenManus agent = null;
         String prompt = buildStepPrompt(task, step);
         try {
             AgentRole role = rolePromptService.resolve(extractType(step.getDescription()), step.getTitle());
-            ChenManus agent = new ChenManus(tools, chatModel);
+            agent = new ChenManus(tools, chatModel);
             agent.setToolObserver((phase, toolName, detail) -> {
                 TaskEventType eventType = switch (phase) {
                     case "started" -> TaskEventType.TOOL_STARTED;
@@ -328,8 +329,7 @@ public class TaskRuntimeService {
             synchronized (task) { artifactService.capture(task, output, taskManager); }
             taskManager.save(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
-                    step.getStepId(), "耗时 " + step.getDurationMs() + "ms，估算输入 " + step.getEstimatedInputTokens()
-                    + " tokens，输出 " + step.getEstimatedOutputTokens() + " tokens"));
+                    step.getStepId(), formatStepMetrics(step)));
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED,
                     step.getStepId(), output));
         } catch (Exception e) {
@@ -341,6 +341,10 @@ public class TaskRuntimeService {
                     step.getStepId(), step.getError()));
             throw e;
         } finally {
+            if (agent != null) {
+                metricsService.recordActualUsage(task, step,
+                        agent.getActualInputTokens(), agent.getActualOutputTokens(), agent.getModelCallCount());
+            }
             step.setCompletedAt(System.currentTimeMillis());
             task.touch();
             taskManager.save(task);
@@ -390,9 +394,18 @@ public class TaskRuntimeService {
         return end < 0 ? description.substring(start).trim() : description.substring(start, end).trim();
     }
 
+    private String formatStepMetrics(TaskStep step) {
+        String input = step.getActualInputTokens() > 0 ? String.valueOf(step.getActualInputTokens()) : "~" + step.getEstimatedInputTokens();
+        String output = step.getActualOutputTokens() > 0 ? String.valueOf(step.getActualOutputTokens()) : "~" + step.getEstimatedOutputTokens();
+        return "耗时 " + step.getDurationMs() + "ms，输入 " + input + " tokens，输出 " + output
+                + " tokens，模型调用 " + step.getModelCallCount() + " 次";
+    }
+
     private String formatMetrics(ChenTask task) {
-        return "耗时 " + task.getDurationMs() + "ms，估算输入 " + task.getEstimatedInputTokens()
-                + " tokens，估算输出 " + task.getEstimatedOutputTokens() + " tokens，估算成本 " + task.getEstimatedCost();
+        String input = task.getActualInputTokens() > 0 ? String.valueOf(task.getActualInputTokens()) : "~" + task.getEstimatedInputTokens();
+        String output = task.getActualOutputTokens() > 0 ? String.valueOf(task.getActualOutputTokens()) : "~" + task.getEstimatedOutputTokens();
+        return "耗时 " + task.getDurationMs() + "ms，输入 " + input + " tokens，输出 " + output
+                + " tokens，模型调用 " + task.getModelCallCount() + " 次，成本 " + task.getEstimatedCost();
     }
 
     private boolean isStopped(ChenTask task) {
