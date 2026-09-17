@@ -20,6 +20,8 @@ public class LlmPlanner {
             - Each step must have a short title, a concrete description, a simple type, and an expected output.
             - Do not create meta steps such as 'think', 'understand task', or 'call the agent'.
             - Prefer dependencies that can be executed sequentially.
+            - Mark a step parallelizable=true only when it is independent from the immediately adjacent steps and can safely run at the same time.
+            - Typical parallelizable steps are independent research/source collection tasks; synthesis, coding, editing and final validation should normally be false.
             - Use types such as RESEARCH, ANALYSIS, CODE, DOCUMENT, FILE, WEB, GENERAL.
             - The plan must be useful even when the task does not need external tools.
             """;
@@ -60,7 +62,7 @@ public class LlmPlanner {
         return new Plan(
                 prompt.length() > 32 ? prompt.substring(0, 32) + "..." : prompt,
                 "模型规划不可用时使用的安全兜底计划",
-                List.of(new PlanStep("完成用户任务", prompt, "GENERAL", "返回满足用户要求的最终结果"))
+                List.of(new PlanStep("完成用户任务", prompt, "GENERAL", "返回满足用户要求的最终结果", false))
         );
     }
 }
