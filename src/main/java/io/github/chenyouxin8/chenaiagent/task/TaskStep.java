@@ -18,11 +18,17 @@ public class TaskStep implements Serializable {
     private long startedAt;
     private long completedAt;
     private int retryCount;
+    private boolean parallelizable;
 
     public TaskStep(String stepId, int sequence, String title, String description) {
+        this(stepId, sequence, title, description, false);
+    }
+
+    public TaskStep(String stepId, int sequence, String title, String description, boolean parallelizable) {
         this.stepId = stepId;
         this.sequence = sequence;
         this.title = title;
         this.description = description;
+        this.parallelizable = parallelizable;
     }
 }
