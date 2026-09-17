@@ -25,6 +25,9 @@ public class TaskStep implements Serializable {
     private List<Integer> dependsOn = new ArrayList<>();
     private long estimatedInputTokens;
     private long estimatedOutputTokens;
+    private long actualInputTokens;
+    private long actualOutputTokens;
+    private long modelCallCount;
 
     public TaskStep(String stepId, int sequence, String title, String description) {
         this(stepId, sequence, title, description, false, List.of());
