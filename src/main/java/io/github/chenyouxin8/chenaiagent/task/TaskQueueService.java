@@ -4,11 +4,19 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class TaskQueueService {
+
+    private static final List<TaskPriority> POLL_ORDER = List.of(
+            TaskPriority.CRITICAL,
+            TaskPriority.HIGH,
+            TaskPriority.NORMAL,
+            TaskPriority.LOW
+    );
 
     private final StringRedisTemplate redis;
     private final boolean redisEnabled;
@@ -47,7 +55,7 @@ public class TaskQueueService {
         QueueItem local = localQueue.poll();
         if (local != null) return local.taskId();
         if (!redisEnabled) return null;
-        for (TaskPriority priority : TaskPriority.values()) {
+        for (TaskPriority priority : POLL_ORDER) {
             try {
                 String taskId = redis.opsForList().leftPop(redisKey(priority));
                 if (taskId != null) return taskId;
@@ -66,7 +74,7 @@ public class TaskQueueService {
         return queueKey + ":" + priority.name().toLowerCase();
     }
 
-    private record QueueItem(String taskId, TaskPriority priority, long sequence) implements Comparable<QueueItem> {
+    private record QueueItem(TaskPriority priority, long sequence, String taskId) implements Comparable<QueueItem> {
         @Override
         public int compareTo(QueueItem other) {
             int byPriority = Integer.compare(other.priority.getWeight(), priority.getWeight());
