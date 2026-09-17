@@ -2,6 +2,7 @@ package io.github.chenyouxin8.chenaiagent.task;
 
 public enum TaskEventType {
     TASK_CREATED,
+    TASK_QUEUED,
     PLAN_CREATED,
     STEP_PLANNED,
     STEP_STARTED,
@@ -11,6 +12,7 @@ public enum TaskEventType {
     TOOL_STARTED,
     TOOL_COMPLETED,
     TOOL_FAILED,
+    METRICS_UPDATED,
     MESSAGE,
     ARTIFACT_CREATED,
     REVIEW_STARTED,
