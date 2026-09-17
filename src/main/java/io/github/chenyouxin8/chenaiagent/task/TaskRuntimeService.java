@@ -6,12 +6,13 @@ import io.github.chenyouxin8.chenaiagent.planner.Plan;
 import io.github.chenyouxin8.chenaiagent.planner.PlanStep;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,6 +32,7 @@ public class TaskRuntimeService {
     private final AgentRolePromptService rolePromptService;
     private final TaskQueueService queueService;
     private final TaskMetricsService metricsService;
+    private final Semaphore parallelSlots;
 
     public TaskRuntimeService(
             TaskManager taskManager,
@@ -42,7 +44,8 @@ public class TaskRuntimeService {
             ArtifactService artifactService,
             AgentRolePromptService rolePromptService,
             TaskQueueService queueService,
-            TaskMetricsService metricsService
+            TaskMetricsService metricsService,
+            @Value("${chenmanus.runtime.max-parallel-steps:4}") int maxParallelSteps
     ) {
         this.taskManager = taskManager;
         this.tools = tools;
@@ -54,6 +57,7 @@ public class TaskRuntimeService {
         this.rolePromptService = rolePromptService;
         this.queueService = queueService;
         this.metricsService = metricsService;
+        this.parallelSlots = new Semaphore(Math.max(1, maxParallelSteps));
     }
 
     public void start(String taskId) {
@@ -183,12 +187,12 @@ public class TaskRuntimeService {
 
             List<TaskStep> parallel = ready.stream().filter(TaskStep::isParallelizable).toList();
             if (parallel.size() >= 2) {
-                taskManager.updateStatus(task, TaskStatus.RUNNING, "并行执行 " + parallel.size() + " 个 DAG 节点");
+                taskManager.updateStatus(task, TaskStatus.RUNNING, "并行执行 " + parallel.size() + " 个 DAG 节点（本实例并发上限受配置控制）");
                 taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.MESSAGE, null,
                         "并行启动：" + parallel.stream().map(TaskStep::getTitle).collect(Collectors.joining("、"))));
 
                 List<CompletableFuture<Boolean>> futures = parallel.stream()
-                        .map(step -> CompletableFuture.supplyAsync(() -> runStepWithRetry(task, step)))
+                        .map(step -> CompletableFuture.supplyAsync(() -> runParallelStep(step, task)))
                         .toList();
                 boolean success = futures.stream().allMatch(CompletableFuture::join);
                 if (!success) {
@@ -212,6 +216,15 @@ public class TaskRuntimeService {
         }
     }
 
+    private boolean runParallelStep(TaskStep step, ChenTask task) {
+        parallelSlots.acquireUninterruptibly();
+        try {
+            return runStepWithRetry(task, step);
+        } finally {
+            parallelSlots.release();
+        }
+    }
+
     private boolean dependenciesSatisfied(TaskStep step, Map<Integer, TaskStep> bySequence) {
         if (step.getDependsOn() == null || step.getDependsOn().isEmpty()) return true;
         return step.getDependsOn().stream().allMatch(sequence -> {
@@ -224,9 +237,7 @@ public class TaskRuntimeService {
     private void createPlan(ChenTask task) {
         String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 3);
         String planningPrompt = task.getPrompt();
-        if (!memoryContext.isBlank()) {
-            planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
-        }
+        if (!memoryContext.isBlank()) planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
 
         Plan plan = planner.createPlan(planningPrompt);
         task.setTitle(plan.title());
@@ -240,18 +251,12 @@ public class TaskRuntimeService {
                     .filter(dep -> dep != null && dep >= 1 && dep < sequence)
                     .distinct().sorted().toList();
             String enrichedDescription = "类型：" + type + "\n" + description + "\n预期输出：" + expected;
-            TaskStep taskStep = new TaskStep(
-                    task.getTaskId() + "_step_" + sequence,
-                    sequence,
-                    planStep.title().trim(),
-                    enrichedDescription,
-                    planStep.parallelizable(),
-                    dependencies
-            );
+            TaskStep taskStep = new TaskStep(task.getTaskId() + "_step_" + sequence, sequence,
+                    planStep.title().trim(), enrichedDescription, planStep.parallelizable(), dependencies);
             task.getSteps().add(taskStep);
             String dependencyText = dependencies.isEmpty() ? "无依赖" : "依赖 Step " + dependencies.stream().map(String::valueOf).collect(Collectors.joining(", "));
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_PLANNED,
-                    taskStep.getStepId(), taskStep.getTitle() + "（" + dependencyText + "）"));
+                    taskStep.getStepId(), taskStep.getTitle() + "（" + dependencyText + (planStep.parallelizable() ? "，可并行" : "") + "）"));
         }
         task.touch();
     }
@@ -261,14 +266,9 @@ public class TaskRuntimeService {
         List<Integer> dependencies = task.getSteps().stream().map(TaskStep::getSequence).sorted().toList();
         String missing = safe(decision.missingItems(), "补足审核发现的缺失内容");
         String feedback = safe(decision.feedback(), "重新检查并修正最终结果");
-        TaskStep repairStep = new TaskStep(
-                task.getTaskId() + "_step_" + sequence,
-                sequence,
-                "补救与修正",
-                "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback,
-                false,
-                dependencies
-        );
+        TaskStep repairStep = new TaskStep(task.getTaskId() + "_step_" + sequence, sequence,
+                "补救与修正", "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback,
+                false, dependencies);
         task.getSteps().add(repairStep);
         taskManager.save(task);
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_PLANNED,
@@ -325,9 +325,7 @@ public class TaskRuntimeService {
             step.setStatus(StepStatus.COMPLETED);
             step.setError(null);
             step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
-            synchronized (task) {
-                artifactService.capture(task, output, taskManager);
-            }
+            synchronized (task) { artifactService.capture(task, output, taskManager); }
             taskManager.save(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
                     step.getStepId(), "耗时 " + step.getDurationMs() + "ms，估算输入 " + step.getEstimatedInputTokens()
@@ -377,14 +375,9 @@ public class TaskRuntimeService {
 
                 同一用户/会话历史任务记忆：
                 %s
-                """.formatted(
-                rolePromptService.instruction(role),
-                task.getPrompt(),
-                step.getTitle(),
-                step.getDescription(),
-                dependencyOutputs.isBlank() ? "（无）" : dependencyOutputs,
-                memoryContext.isBlank() ? "（无）" : memoryContext
-        );
+                """.formatted(rolePromptService.instruction(role), task.getPrompt(), step.getTitle(),
+                step.getDescription(), dependencyOutputs.isBlank() ? "（无）" : dependencyOutputs,
+                memoryContext.isBlank() ? "（无）" : memoryContext);
     }
 
     private String extractType(String description) {
