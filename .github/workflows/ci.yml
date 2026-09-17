@@ -19,11 +19,11 @@ jobs:
       - name: Compile backend
         run: |
           chmod +x mvnw
-          ./mvnw -q -DskipTests compile
+          ./mvnw -q -DskipTests package
       - name: Run offline unit tests
         run: |
           chmod +x mvnw
-          ./mvnw -q -Dtest=FileBasedChatMemoryTest,FileOperationToolTest test
+          ./mvnw -q -Dtest=FileBasedChatMemoryTest,FileOperationToolTest,TaskRepositoryTest test
 
   frontend:
     runs-on: ubuntu-latest
