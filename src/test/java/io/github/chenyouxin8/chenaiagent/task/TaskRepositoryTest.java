@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TaskRepositoryTest {
 
     @Test
-    void shouldPersistTaskStepsArtifactsReviewAndUsage() {
+    void shouldPersistTaskStepsArtifactsReviewUsageAndApproval() {
         JdbcDataSource dataSource = new JdbcDataSource();
         dataSource.setURL("jdbc:h2:mem:task_repo_test;DB_CLOSE_DELAY=-1");
         dataSource.setUser("sa");
@@ -33,9 +33,9 @@ class TaskRepositoryTest {
         task.setModelCallCount(4);
         task.setEstimatedCost(0.1234);
 
-        TaskStep step = new TaskStep("task_test_001_step_1", 1, "执行", "完成测试", true, List.of());
-        step.setStatus(StepStatus.COMPLETED);
-        step.setOutput("执行结果");
+        TaskStep step = new TaskStep("task_test_001_step_1", 1, "执行", "完成测试", true, List.of(), ApprovalStatus.PENDING);
+        step.setStatus(StepStatus.PENDING);
+        step.setApprovalNote("请确认发布");
         step.setRetryCount(1);
         step.setDurationMs(321);
         step.setActualInputTokens(1200);
@@ -64,7 +64,8 @@ class TaskRepositoryTest {
         assertEquals(800, result.getActualOutputTokens());
         assertEquals(4, result.getModelCallCount());
         assertEquals(1, result.getSteps().size());
-        assertEquals("执行结果", result.getSteps().get(0).getOutput());
+        assertEquals(ApprovalStatus.PENDING, result.getSteps().get(0).getApprovalStatus());
+        assertEquals("请确认发布", result.getSteps().get(0).getApprovalNote());
         assertTrue(result.getSteps().get(0).isParallelizable());
         assertEquals(321, result.getSteps().get(0).getDurationMs());
         assertEquals(1200, result.getSteps().get(0).getActualInputTokens());
@@ -77,6 +78,29 @@ class TaskRepositoryTest {
         assertEquals("abc123", result.getArtifacts().get(0).getChecksum());
         assertNotNull(result.getReview());
         assertTrue(result.getReview().passed());
+    }
+
+    @Test
+    void shouldPersistAndReplayTaskEvents() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_event_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+        ChenTask task = new ChenTask("task_event_001", "event");
+        repository.save(task);
+
+        TaskEvent first = new TaskEvent(task.getTaskId(), TaskEventType.TASK_CREATED, null, "created");
+        TaskEvent second = new TaskEvent(task.getTaskId(), TaskEventType.TASK_APPROVAL_REQUIRED, "step-1", "approve");
+        repository.appendEvent(first);
+        repository.appendEvent(second);
+
+        List<TaskEvent> history = repository.findEvents(task.getTaskId(), 10);
+        assertEquals(2, history.size());
+        assertEquals(TaskEventType.TASK_CREATED, history.get(0).getType());
+        assertEquals(TaskEventType.TASK_APPROVAL_REQUIRED, history.get(1).getType());
+        assertEquals("approve", history.get(1).getMessage());
     }
 
     @Test
