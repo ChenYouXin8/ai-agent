@@ -32,8 +32,6 @@ public class TaskMemoryService {
 
     public void remember(ChenTask task) {
         String content = buildContent(task);
-
-        // File storage remains the durable fallback and is useful for direct debugging/export.
         try {
             Files.createDirectories(memoryDir);
             Files.writeString(
@@ -47,7 +45,6 @@ public class TaskMemoryService {
             // File memory is best-effort.
         }
 
-        // Semantic memory uses the existing Spring AI VectorStore with strict session scoping.
         try {
             vectorStore.add(List.of(new Document(
                     content,
@@ -59,7 +56,7 @@ public class TaskMemoryService {
                     )
             )));
         } catch (RuntimeException ignored) {
-            // Semantic memory is an enhancement; file memory still remains available.
+            // Semantic memory is best-effort; file memory remains available.
         }
     }
 
@@ -73,7 +70,6 @@ public class TaskMemoryService {
 
     public String recallContext(String ownerId, String sessionId, String query, int limit) {
         int topK = Math.max(1, Math.min(limit, 8));
-
         try {
             String filter = "memory_type == 'task_memory'";
             if (ownerId != null && !ownerId.isBlank()) {
@@ -82,7 +78,6 @@ public class TaskMemoryService {
             if (sessionId != null && !sessionId.isBlank()) {
                 filter += " && session_id == '" + escapeFilter(sessionId) + "'";
             }
-
             List<Document> documents = vectorStore.similaritySearch(
                     SearchRequest.builder()
                             .query(query == null || query.isBlank() ? "ChenManus task" : query)
@@ -102,7 +97,6 @@ public class TaskMemoryService {
         } catch (RuntimeException ignored) {
             // Fall through to lexical file memory.
         }
-
         return lexicalRecall(ownerId, sessionId, query, topK);
     }
 
