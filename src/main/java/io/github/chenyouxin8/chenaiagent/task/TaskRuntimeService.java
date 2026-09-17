@@ -239,7 +239,13 @@ public class TaskRuntimeService {
         String planningPrompt = task.getPrompt();
         if (!memoryContext.isBlank()) planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
 
-        Plan plan = planner.createPlan(planningPrompt);
+        LlmPlanner.PlanResult planResult = planner.createPlanWithUsage(planningPrompt);
+        metricsService.recordActualUsage(
+                task,
+                planResult.actualInputTokens(),
+                planResult.actualOutputTokens(),
+                planResult.modelCallCount());
+        Plan plan = planResult.plan();
         task.setTitle(plan.title());
         task.setPlanSummary(plan.summary());
         for (PlanStep planStep : plan.steps()) {
@@ -328,8 +334,6 @@ public class TaskRuntimeService {
             step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
             synchronized (task) { artifactService.capture(task, output, taskManager); }
             taskManager.save(task);
-            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
-                    step.getStepId(), formatStepMetrics(step)));
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED,
                     step.getStepId(), output));
         } catch (Exception e) {
@@ -348,6 +352,8 @@ public class TaskRuntimeService {
             step.setCompletedAt(System.currentTimeMillis());
             task.touch();
             taskManager.save(task);
+            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
+                    step.getStepId(), formatStepMetrics(step)));
         }
     }
 
