@@ -15,7 +15,6 @@ import java.util.stream.Collectors;
 public class TaskRuntimeService {
 
     private static final int MAX_RETRIES = 2;
-    private static final int MAX_REVIEW_REPAIR = 1;
 
     private final TaskManager taskManager;
     private final ToolCallback[] tools;
@@ -84,8 +83,9 @@ public class TaskRuntimeService {
                 ));
             }
 
-            runPendingSteps(task);
-            if (isStopped(task)) return;
+            if (!runPendingSteps(task) || isStopped(task) || task.getStatus() == TaskStatus.FAILED) {
+                return;
+            }
 
             taskManager.updateStatus(task, TaskStatus.REVIEWING, "Reviewer 正在验收任务结果");
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始结果审核"));
@@ -137,9 +137,9 @@ public class TaskRuntimeService {
         }
     }
 
-    private void runPendingSteps(ChenTask task) {
+    private boolean runPendingSteps(ChenTask task) {
         for (TaskStep step : task.getSteps()) {
-            if (isStopped(task)) return;
+            if (isStopped(task)) return false;
             if (step.getStatus() == StepStatus.COMPLETED || step.getStatus() == StepStatus.SKIPPED) continue;
 
             taskManager.updateStatus(task, TaskStatus.RUNNING, "执行：" + step.getTitle());
@@ -147,16 +147,17 @@ public class TaskRuntimeService {
             if (!success) {
                 task.setError(step.getError());
                 taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + step.getTitle());
-                return;
+                return false;
             }
         }
+        return true;
     }
 
     private void createPlan(ChenTask task) {
         String memoryContext = memoryService.recallContext(task.getPrompt(), 3);
         String planningPrompt = task.getPrompt();
         if (!memoryContext.isBlank()) {
-            planningPrompt += "\n\n以下是与当前任务可能相关的历史任务记忆，仅用于避免重复工作和参考成功做法：\n" + memoryContext;
+            planningPrompt += "\n\n以下是最近的历史任务记忆，仅用于参考已完成任务的做法，不能当作当前任务事实：\n" + memoryContext;
         }
 
         Plan plan = planner.createPlan(planningPrompt);
