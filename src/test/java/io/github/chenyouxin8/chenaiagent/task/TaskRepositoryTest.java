@@ -3,8 +3,13 @@ package io.github.chenyouxin8.chenaiagent.task;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -181,6 +186,45 @@ class TaskRepositoryTest {
         assertEquals(3, limited.size());
         assertEquals(1597L, limited.get(0).getTimestamp());
         assertEquals(1599L, limited.get(2).getTimestamp());
+    }
+
+    @Test
+    void saveRollsBackTaskRowAndStepsWhenStepInsertFails() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_save_tx_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
+        ChenTask task = new ChenTask("task_save_tx", "事务回滚");
+        task.setStatus(TaskStatus.RUNNING);
+        repository.save(task);
+
+        ChenTask update = repository.find("task_save_tx");
+        update.setStatus(TaskStatus.QUEUED);
+        update.getSteps().add(new TaskStep("task_save_tx_dup", 1, "步骤A", "描述", false, List.of(), ApprovalStatus.NONE));
+        update.getSteps().add(new TaskStep("task_save_tx_dup", 2, "步骤B", "描述", false, List.of(), ApprovalStatus.NONE));
+
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        assertThrows(DataIntegrityViolationException.class, () ->
+                transaction.executeWithoutResult(status -> repository.save(update)));
+
+        ChenTask after = repository.find("task_save_tx");
+        assertEquals(TaskStatus.RUNNING, after.getStatus());
+        assertTrue(after.getSteps().isEmpty());
+    }
+
+    @Test
+    void saveMethodsAreTransactionalForAtomicAggregateWrites() throws Exception {
+        Transactional plain = TaskRepository.class.getMethod("save", ChenTask.class).getAnnotation(Transactional.class);
+        Transactional guarded = TaskRepository.class.getMethod("save", ChenTask.class, TaskStatus.class)
+                .getAnnotation(Transactional.class);
+
+        assertNotNull(plain);
+        assertNotNull(guarded);
+        assertEquals(Propagation.REQUIRED, plain.propagation());
+        assertEquals(Propagation.REQUIRED, guarded.propagation());
     }
 
     @Test

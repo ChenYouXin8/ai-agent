@@ -6,15 +6,23 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 @Service
 public class TaskManager {
+    private static final int SAVE_LOCK_STRIPES = 16;
+
     private final Map<String, ChenTask> tasks = new ConcurrentHashMap<>();
     private final Map<String, List<Consumer<TaskEvent>>> listeners = new ConcurrentHashMap<>();
     private final TaskRepository repository;
+    private final ReentrantLock[] saveLocks;
 
-    public TaskManager(TaskRepository repository) { this.repository = repository; }
+    public TaskManager(TaskRepository repository) {
+        this.repository = repository;
+        this.saveLocks = new ReentrantLock[SAVE_LOCK_STRIPES];
+        for (int i = 0; i < SAVE_LOCK_STRIPES; i++) saveLocks[i] = new ReentrantLock();
+    }
 
     @PostConstruct
     public void restore() {
@@ -73,14 +81,27 @@ public class TaskManager {
     public void save(ChenTask task) {
         TaskTenantContext.set(task.getTenantId());
         task.touch();
-        repository.save(task);
+        withSaveLock(task.getTaskId(), () -> repository.save(task));
     }
 
     // 条件保存：数据库中任务仍为 expectedStatus 才写入，用于审批这类不允许并发交错的状态转移
     public void save(ChenTask task, TaskStatus expectedStatus) {
         TaskTenantContext.set(task.getTenantId());
         task.touch();
-        repository.save(task, expectedStatus);
+        withSaveLock(task.getTaskId(), () -> repository.save(task, expectedStatus));
+    }
+
+    // 同 JVM 内按任务条带锁串行化保存（旧的全局 synchronized 会串行化所有无关任务）；
+    // 跨实例的权威串行化在数据库层：repository.save 的单事务 + 任务行锁。条带锁释放早于外层事务提交时，
+    // 后到的同任务保存会在行锁上等待，正确性不受影响
+    private void withSaveLock(String taskId, Runnable saveAction) {
+        ReentrantLock lock = saveLocks[Math.floorMod(taskId.hashCode(), saveLocks.length)];
+        lock.lock();
+        try {
+            saveAction.run();
+        } finally {
+            lock.unlock();
+        }
     }
 
     // 事件持久化失败必须让调用方感知（事务内则随之回滚）：吞掉异常会导致 SSE 与审计历史分叉，

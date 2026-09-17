@@ -3,6 +3,7 @@ package io.github.chenyouxin8.chenaiagent.task;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -108,7 +109,10 @@ public class TaskRepository {
         return count == null ? 0 : count;
     }
 
-    public synchronized void save(ChenTask task) {
+    // 单事务写入整个聚合（任务行 + 步骤 + 产物）：任务行 UPDATE 总是先于子表 DELETE/INSERT 执行并持有行锁，
+    // 跨实例并发保存同一任务时在数据库层串行化，步骤不会交错覆盖或重复；已有事务（如审批）则加入该事务
+    @Transactional
+    public void save(ChenTask task) {
         int updated = jdbc.update(TASK_UPDATE, taskUpdateParams(task));
         if (updated == 0) {
             jdbc.update("""
@@ -135,7 +139,8 @@ public class TaskRepository {
     }
 
     // 条件更新（CAS）：仅当数据库中任务仍处于 expectedStatus 才写入；0 行更新说明状态已被并发修改，整次保存拒绝并回滚
-    public synchronized void save(ChenTask task, TaskStatus expectedStatus) {
+    @Transactional
+    public void save(ChenTask task, TaskStatus expectedStatus) {
         Object[] base = taskUpdateParams(task);
         Object[] params = Arrays.copyOf(base, base.length + 1);
         params[base.length] = expectedStatus.name();

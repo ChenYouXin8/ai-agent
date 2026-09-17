@@ -4,13 +4,17 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class TaskManagerTest {
@@ -42,5 +46,37 @@ class TaskManagerTest {
 
         assertTrue(received.isEmpty());
         verify(repository).appendEvent(event);
+    }
+
+    @Test
+    void savesOfSameTaskAreSerializedWithinJvm() throws Exception {
+        TaskRepository repository = mock(TaskRepository.class);
+        AtomicInteger inFlight = new AtomicInteger();
+        AtomicInteger maxInFlight = new AtomicInteger();
+        CountDownLatch startBarrier = new CountDownLatch(2);
+        doAnswer(invocation -> {
+            inFlight.incrementAndGet();
+            maxInFlight.accumulateAndGet(inFlight.get(), Math::max);
+            Thread.sleep(5);
+            inFlight.decrementAndGet();
+            return null;
+        }).when(repository).save(any(ChenTask.class));
+
+        TaskManager manager = new TaskManager(repository);
+        ChenTask task = new ChenTask("task_save_race", "并发保存");
+        Runnable saver = () -> {
+            startBarrier.countDown();
+            try { startBarrier.await(); } catch (InterruptedException e) { return; }
+            for (int i = 0; i < 25; i++) manager.save(task);
+        };
+        Thread first = new Thread(saver, "save-race-1");
+        Thread second = new Thread(saver, "save-race-2");
+        first.start();
+        second.start();
+        first.join();
+        second.join();
+
+        verify(repository, times(50)).save(any(ChenTask.class));
+        assertEquals(1, maxInFlight.get());
     }
 }
