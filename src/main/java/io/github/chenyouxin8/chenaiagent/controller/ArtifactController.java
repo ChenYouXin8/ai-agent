@@ -51,21 +51,57 @@ public class ArtifactController {
             @RequestParam(required = false) String tenantId,
             @RequestParam(required = false) String userId
     ) {
+        ChenTask task = authorizedTask(taskId, tenantId, userId);
+        Artifact artifact = findArtifact(task, artifactId);
+        return buildResponse(artifact, resolveSafePath(artifact.getPath()), ContentDisposition.attachment());
+    }
+
+    @GetMapping("/{artifactId}/preview")
+    public ResponseEntity<Resource> preview(
+            @PathVariable String taskId,
+            @PathVariable String artifactId,
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String userId
+    ) {
+        ChenTask task = authorizedTask(taskId, tenantId, userId);
+        Artifact artifact = findArtifact(task, artifactId);
+        Path file = resolveSafePath(artifact.getPath());
+        MediaType mediaType = parseMediaType(artifact.getMediaType());
+        if (!(mediaType.equals(MediaType.APPLICATION_PDF)
+                || mediaType.getType().equals("image")
+                || mediaType.getType().equals("text"))) {
+            throw new ResponseStatusException(NOT_FOUND, "该产物类型不支持浏览器预览，请下载后打开");
+        }
+        return buildResponse(artifact, file, ContentDisposition.inline());
+    }
+
+    private ChenTask authorizedTask(String taskId, String tenantId, String userId) {
         ChenTask task = taskManager.get(taskId);
         scopeService.assertAccess(task, tenantId, userId);
+        return task;
+    }
 
-        Artifact artifact = task.getArtifacts().stream()
+    private Artifact findArtifact(ChenTask task, String artifactId) {
+        return task.getArtifacts().stream()
                 .filter(candidate -> Objects.equals(candidate.getArtifactId(), artifactId))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "产物不存在"));
+    }
 
-        Path file = resolveSafePath(artifact.getPath());
+    private ResponseEntity<Resource> buildResponse(
+            Artifact artifact,
+            Path file,
+            ContentDisposition disposition
+    ) {
         Resource resource = new FileSystemResource(file);
-        MediaType mediaType = parseMediaType(artifact.getMediaType());
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(mediaType);
+        headers.setContentType(parseMediaType(artifact.getMediaType()));
         headers.setContentLength(artifact.getSizeBytes() > 0 ? artifact.getSizeBytes() : fileSize(file));
-        headers.setContentDisposition(ContentDisposition.attachment().filename(artifact.getName()).build());
+        headers.setContentDisposition(disposition.filename(artifact.getName()).build());
+        headers.set("X-Artifact-Version", String.valueOf(artifact.getVersion()));
+        if (artifact.getChecksum() != null && !artifact.getChecksum().isBlank()) {
+            headers.set("X-Artifact-SHA256", artifact.getChecksum());
+        }
         return ResponseEntity.ok().headers(headers).body(resource);
     }
 
@@ -90,7 +126,7 @@ public class ArtifactController {
             return value == null || value.isBlank()
                     ? MediaType.APPLICATION_OCTET_STREAM
                     : MediaType.parseMediaType(value);
-        } catch (InvalidPathException | IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
     }
