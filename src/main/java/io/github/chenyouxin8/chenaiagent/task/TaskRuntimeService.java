@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 public class TaskRuntimeService {
 
     private static final int MAX_RETRIES = 2;
+    private static final int MAX_REPAIR_ROUNDS = 1;
 
     private final TaskManager taskManager;
     private final ToolCallback[] tools;
@@ -77,6 +78,7 @@ public class TaskRuntimeService {
             if (task.getSteps().isEmpty()) {
                 taskManager.updateStatus(task, TaskStatus.PLANNING, "ChenManus 正在生成执行计划");
                 createPlan(task);
+                taskManager.save(task);
                 taskManager.publish(new TaskEvent(
                         task.getTaskId(), TaskEventType.PLAN_CREATED, null,
                         "已生成 " + task.getSteps().size() + " 个执行步骤"
@@ -89,25 +91,22 @@ public class TaskRuntimeService {
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始结果审核"));
             ReviewDecision decision = reviewer.review(task);
             task.setReview(decision);
+            taskManager.save(task);
             taskManager.publish(new TaskEvent(
                     task.getTaskId(), TaskEventType.REVIEW_COMPLETED, null,
                     decision.feedback() == null ? "审核完成" : decision.feedback()
             ));
 
-            if (!decision.passed()) {
+            for (int repairRound = 0; !decision.passed() && repairRound < MAX_REPAIR_ROUNDS; repairRound++) {
                 TaskStep repairStep = createRepairStep(task, decision);
-                boolean repaired = runStepWithRetry(task, repairStep);
-                if (!repaired) {
-                    task.setError("审核未通过且自动补救失败：" + safe(decision.missingItems(), decision.feedback()));
-                    memoryService.remember(task);
-                    taskManager.updateStatus(task, TaskStatus.FAILED, task.getError());
-                    return;
+                if (!runStepWithRetry(task, repairStep)) {
+                    break;
                 }
-
                 taskManager.updateStatus(task, TaskStatus.REVIEWING, "补救步骤完成，Reviewer 正在二次验收");
                 taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始二次审核"));
                 decision = reviewer.review(task);
                 task.setReview(decision);
+                taskManager.save(task);
                 taskManager.publish(new TaskEvent(
                         task.getTaskId(), TaskEventType.REVIEW_COMPLETED, null,
                         decision.feedback() == null ? "二次审核完成" : decision.feedback()
@@ -118,18 +117,22 @@ public class TaskRuntimeService {
                     .map(TaskStep::getOutput)
                     .filter(output -> output != null && !output.isBlank())
                     .collect(Collectors.joining("\n\n")));
+            taskManager.save(task);
 
             if (!decision.passed()) {
                 task.setError("Reviewer 未通过：" + safe(decision.missingItems(), decision.feedback()));
+                taskManager.save(task);
                 memoryService.remember(task);
                 taskManager.updateStatus(task, TaskStatus.FAILED, task.getError());
                 return;
             }
 
             memoryService.remember(task);
+            taskManager.save(task);
             taskManager.updateStatus(task, TaskStatus.COMPLETED, "任务完成并通过审核");
         } catch (Exception e) {
             task.setError(e.getMessage());
+            taskManager.save(task);
             memoryService.remember(task);
             taskManager.updateStatus(task, TaskStatus.FAILED, "任务失败：" + e.getMessage());
         }
@@ -144,6 +147,7 @@ public class TaskRuntimeService {
             boolean success = runStepWithRetry(task, step);
             if (!success) {
                 task.setError(step.getError());
+                taskManager.save(task);
                 taskManager.updateStatus(task, TaskStatus.FAILED, "步骤失败：" + step.getTitle());
                 return false;
             }
@@ -152,10 +156,10 @@ public class TaskRuntimeService {
     }
 
     private void createPlan(ChenTask task) {
-        String memoryContext = memoryService.recallContext(task.getPrompt(), 3);
+        String memoryContext = memoryService.recallContext(task.getSessionId(), task.getPrompt(), 3);
         String planningPrompt = task.getPrompt();
         if (!memoryContext.isBlank()) {
-            planningPrompt += "\n\n以下是最近的历史任务记忆，仅用于参考已完成任务的做法，不能当作当前任务事实：\n" + memoryContext;
+            planningPrompt += "\n\n以下是同一会话近期历史任务记忆，仅用于参考做法，不可当作当前任务事实：\n" + memoryContext;
         }
 
         Plan plan = planner.createPlan(planningPrompt);
@@ -193,6 +197,7 @@ public class TaskRuntimeService {
                 "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback
         );
         task.getSteps().add(repairStep);
+        taskManager.save(task);
         taskManager.publish(new TaskEvent(
                 task.getTaskId(), TaskEventType.STEP_PLANNED,
                 repairStep.getStepId(), repairStep.getTitle()
@@ -207,6 +212,7 @@ public class TaskRuntimeService {
                     step.setRetryCount(attempt);
                     step.setStatus(StepStatus.PENDING);
                     step.setError(null);
+                    taskManager.save(task);
                     taskManager.publish(new TaskEvent(
                             task.getTaskId(), TaskEventType.STEP_RETRY,
                             step.getStepId(),
@@ -225,6 +231,7 @@ public class TaskRuntimeService {
     private void runStep(ChenTask task, TaskStep step) {
         step.setStatus(StepStatus.RUNNING);
         step.setStartedAt(System.currentTimeMillis());
+        taskManager.save(task);
         taskManager.publish(new TaskEvent(
                 task.getTaskId(), TaskEventType.STEP_STARTED,
                 step.getStepId(), step.getTitle()
@@ -249,15 +256,18 @@ public class TaskRuntimeService {
             step.setStatus(StepStatus.COMPLETED);
             step.setError(null);
             artifactService.capture(task, output, taskManager);
+            taskManager.save(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED, step.getStepId(), output));
         } catch (Exception e) {
             step.setError(e.getMessage());
             step.setStatus(StepStatus.FAILED);
+            taskManager.save(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_FAILED, step.getStepId(), e.getMessage()));
             throw e;
         } finally {
             step.setCompletedAt(System.currentTimeMillis());
             task.touch();
+            taskManager.save(task);
         }
     }
 
@@ -267,6 +277,8 @@ public class TaskRuntimeService {
                 .filter(candidate -> candidate.getOutput() != null && !candidate.getOutput().isBlank())
                 .map(candidate -> "步骤 " + candidate.getSequence() + " - " + candidate.getTitle() + ":\n" + truncate(candidate.getOutput(), 3500))
                 .collect(Collectors.joining("\n\n"));
+        String memoryContext = memoryService.recallContext(task.getSessionId(), task.getPrompt(), 2);
+        String memorySection = memoryContext.isBlank() ? "（无）" : memoryContext;
 
         return """
                 你是 ChenManus 2.0 的任务执行 Agent。
@@ -275,18 +287,23 @@ public class TaskRuntimeService {
                 步骤说明：%s
 
                 规则：
-                1. 只关注当前步骤，但要利用已有步骤结果。
-                2. 能使用工具时优先使用工具完成实际工作，而不是只给建议。
-                3. 不要伪造工具执行结果；无法完成时明确说明原因。
-                4. 当前步骤完成后，返回清晰、可验证的结果。
+                1. 只关注当前步骤，但要利用已有步骤结果和历史任务记忆。
+                2. 历史记忆只用于参考，不得把其中内容当成当前事实。
+                3. 能使用工具时优先使用工具完成实际工作，而不是只给建议。
+                4. 不要伪造工具执行结果；无法完成时明确说明原因。
+                5. 当前步骤完成后，返回清晰、可验证的结果。
 
                 已完成步骤结果：
+                %s
+
+                同一会话历史任务记忆：
                 %s
                 """.formatted(
                 task.getPrompt(),
                 step.getTitle(),
                 step.getDescription(),
-                previousOutputs.isBlank() ? "（无）" : previousOutputs
+                previousOutputs.isBlank() ? "（无）" : previousOutputs,
+                memorySection
         );
     }
 
