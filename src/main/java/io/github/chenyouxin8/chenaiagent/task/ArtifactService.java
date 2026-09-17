@@ -2,6 +2,8 @@ package io.github.chenyouxin8.chenaiagent.task;
 
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -24,7 +26,7 @@ public class ArtifactService {
         Matcher paths = PATH.matcher(output);
         while (paths.find()) {
             String path = paths.group();
-            String name = path.substring(path.lastIndexOf('/') + 1);
+            String name = Path.of(path).getFileName() == null ? path : Path.of(path).getFileName().toString();
             addArtifact(task, name, path, taskManager);
         }
     }
@@ -40,8 +42,23 @@ public class ArtifactService {
                 extension,
                 path
         );
+        enrichMetadata(artifact);
         task.getArtifacts().add(artifact);
         task.touch();
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.ARTIFACT_CREATED, null, name + " → " + path));
+    }
+
+    private void enrichMetadata(Artifact artifact) {
+        if (artifact.getPath().startsWith("http://") || artifact.getPath().startsWith("https://")) return;
+        try {
+            Path file = Path.of(artifact.getPath()).toAbsolutePath().normalize();
+            if (Files.isRegularFile(file)) {
+                artifact.setSizeBytes(Files.size(file));
+                String detected = Files.probeContentType(file);
+                if (detected != null && !detected.isBlank()) artifact.setMediaType(detected);
+            }
+        } catch (Exception ignored) {
+            // Metadata is best-effort; the artifact path remains usable for later safe resolution.
+        }
     }
 }
