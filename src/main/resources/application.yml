@@ -86,6 +86,8 @@ chenmanus:
     redis-enabled: ${CHENMANUS_REDIS_ENABLED:false}
   runtime:
     max-parallel-steps: ${CHENMANUS_MAX_PARALLEL_STEPS:4}
+  quota:
+    max-active-tasks-per-tenant: ${CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT:20}
   metrics:
     input-cost-per-1k: ${CHENMANUS_INPUT_COST_PER_1K:0.0}
     output-cost-per-1k: ${CHENMANUS_OUTPUT_COST_PER_1K:0.0}
