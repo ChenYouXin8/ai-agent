@@ -111,13 +111,15 @@ public class ArtifactController {
             throw new ResponseStatusException(NOT_FOUND, "仅支持本地交付产物");
         }
         try {
+            Path configuredRoot = allowedRoot.toRealPath();
             Path candidate = Path.of(rawPath).toAbsolutePath().normalize();
-            if (!candidate.startsWith(allowedRoot) || !Files.isRegularFile(candidate)) {
+            Path real = candidate.toRealPath();
+            if (!real.startsWith(configuredRoot) || !Files.isRegularFile(real)) {
                 throw new ResponseStatusException(NOT_FOUND, "产物不可访问");
             }
-            return candidate;
-        } catch (InvalidPathException e) {
-            throw new ResponseStatusException(NOT_FOUND, "产物路径无效");
+            return real;
+        } catch (InvalidPathException | java.io.IOException e) {
+            throw new ResponseStatusException(NOT_FOUND, "产物路径无效或不存在");
         }
     }
 
