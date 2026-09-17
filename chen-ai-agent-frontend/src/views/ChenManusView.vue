@@ -38,9 +38,9 @@ function connectEvents(id) {
   eventSource = new EventSource(ENDPOINTS.taskEvents(id))
   const eventNames = [
     'task_created', 'plan_created', 'step_planned', 'step_started',
-    'step_retry', 'step_completed', 'step_failed', 'artifact_created',
-    'review_started', 'review_completed', 'task_paused', 'task_resumed',
-    'task_cancelled', 'task_completed', 'task_failed'
+    'step_retry', 'step_completed', 'step_failed', 'tool_started',
+    'tool_completed', 'artifact_created', 'review_started', 'review_completed',
+    'task_paused', 'task_resumed', 'task_cancelled', 'task_completed', 'task_failed'
   ]
   eventNames.forEach((name) => {
     eventSource.addEventListener(name, async (message) => {
