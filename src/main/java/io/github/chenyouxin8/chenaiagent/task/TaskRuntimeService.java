@@ -66,7 +66,7 @@ public class TaskRuntimeService {
         taskManager.updateStatus(task, TaskStatus.QUEUED, "任务已进入 ChenManus 执行队列");
         taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_QUEUED, null,
                 queueService.isRedisEnabled() ? "Redis 分布式任务队列" : "本地任务队列"));
-        queueService.enqueue(taskId);
+        queueService.enqueue(taskId, task.getPriority());
     }
 
     public void pause(String taskId) {
