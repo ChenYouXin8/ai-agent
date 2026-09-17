@@ -8,6 +8,23 @@ public record PlanStep(
         String type,
         String expectedOutput,
         List<Integer> dependsOn,
-        boolean parallelizable
+        boolean parallelizable,
+        boolean requiresApproval
 ) {
+    public PlanStep(String title,
+                    String description,
+                    String type,
+                    String expectedOutput,
+                    List<Integer> dependsOn,
+                    boolean parallelizable) {
+        this(title, description, type, expectedOutput, dependsOn, parallelizable, false);
+    }
+
+    public PlanStep(String title,
+                    String description,
+                    String type,
+                    String expectedOutput,
+                    boolean parallelizable) {
+        this(title, description, type, expectedOutput, List.of(), parallelizable, false);
+    }
 }
