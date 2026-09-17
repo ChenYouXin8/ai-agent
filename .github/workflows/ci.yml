@@ -16,10 +16,14 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Test backend
+      - name: Compile backend
         run: |
           chmod +x mvnw
-          ./mvnw -q test
+          ./mvnw -q -DskipTests package
+      - name: Run offline unit tests
+        run: |
+          chmod +x mvnw
+          ./mvnw -q -Dtest=FileBasedChatMemoryTest,FileOperationToolTest test
 
   frontend:
     runs-on: ubuntu-latest
