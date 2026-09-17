@@ -1,6 +1,7 @@
 package io.github.chenyouxin8.chenaiagent.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -36,7 +37,8 @@ public class OAuth2SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers("/swagger/**", "/v3/api-docs/**", "/webjars/**", "/error", "/actuator/health").permitAll();
                     if (oauth2Enabled()) {
-                        auth.requestMatchers("/tasks/quota", "/tasks/admin/**").hasAnyRole("TENANT_ADMIN", "PLATFORM_ADMIN");
+                        auth.requestMatchers("/tasks/quota", "/tasks/admin/**")
+                                .hasAnyRole("TENANT_ADMIN", "PLATFORM_ADMIN");
                         auth.requestMatchers("/tasks/**").authenticated();
                         auth.anyRequest().authenticated();
                     } else {
@@ -52,10 +54,10 @@ public class OAuth2SecurityConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "chenmanus.security.mode", havingValue = "oauth2")
     JwtDecoder chenManusJwtDecoder(
             @Value("${chenmanus.security.oidc.issuer-uri:}") String issuerUri
     ) {
-        if (!oauth2Enabled()) return null;
         if (issuerUri == null || issuerUri.isBlank()) {
             throw new IllegalStateException("OAuth2 模式必须配置 CHENMANUS_OIDC_ISSUER_URI");
         }
@@ -77,7 +79,8 @@ public class OAuth2SecurityConfig {
             values.stream()
                     .map(String::valueOf)
                     .filter(value -> !value.isBlank())
-                    .map(value -> new SimpleGrantedAuthority(value.startsWith("ROLE_") ? value : "ROLE_" + value))
+                    .map(value -> new SimpleGrantedAuthority(
+                            value.startsWith("ROLE_") ? value : "ROLE_" + value))
                     .forEach(authorities::add);
         }
         if (authorities.isEmpty()) authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
