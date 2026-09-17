@@ -98,6 +98,36 @@ public class TaskRuntimeService {
         }
     }
 
+    public void approve(String taskId, String note) {
+        ChenTask task = taskManager.get(taskId);
+        TaskStep step = pendingApprovalStep(task);
+        if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
+            throw new IllegalStateException("当前任务没有待审批步骤");
+        }
+        step.setApprovalStatus(ApprovalStatus.APPROVED);
+        step.setApprovalNote(note == null ? "" : note.trim());
+        taskManager.save(task);
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_GRANTED,
+                step.getStepId(), "审批通过：" + step.getTitle()));
+        start(taskId);
+    }
+
+    public void reject(String taskId, String note) {
+        ChenTask task = taskManager.get(taskId);
+        TaskStep step = pendingApprovalStep(task);
+        if (step == null || task.getStatus() != TaskStatus.WAITING_USER) {
+            throw new IllegalStateException("当前任务没有待审批步骤");
+        }
+        step.setApprovalStatus(ApprovalStatus.REJECTED);
+        step.setApprovalNote(note == null ? "" : note.trim());
+        task.setError("人工审批驳回：" + step.getTitle() +
+                (step.getApprovalNote() == null || step.getApprovalNote().isBlank() ? "" : "；" + step.getApprovalNote()));
+        taskManager.save(task);
+        taskManager.publish(new TaskEvent(taskId, TaskEventType.TASK_APPROVAL_REJECTED,
+                step.getStepId(), "审批驳回：" + step.getTitle()));
+        taskManager.updateStatus(task, TaskStatus.CANCELLED, "任务因人工审批驳回而结束");
+    }
+
     public void runNow(String taskId) {
         execute(taskManager.get(taskId));
     }
@@ -118,7 +148,8 @@ public class TaskRuntimeService {
                         "已生成 " + task.getSteps().size() + " 个执行步骤"));
             }
 
-            if (!runPendingSteps(task) || isStopped(task) || task.getStatus() == TaskStatus.FAILED) return;
+            if (!runPendingSteps(task) || isStopped(task) || task.getStatus() == TaskStatus.FAILED
+                    || task.getStatus() == TaskStatus.CANCELLED) return;
 
             taskManager.updateStatus(task, TaskStatus.REVIEWING, "Reviewer 正在验收任务结果");
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.REVIEW_STARTED, null, "开始结果审核"));
@@ -188,6 +219,19 @@ public class TaskRuntimeService {
                 task.setError("执行 DAG 无可运行步骤：存在循环依赖或缺失依赖");
                 taskManager.save(task);
                 taskManager.updateStatus(task, TaskStatus.FAILED, task.getError());
+                return false;
+            }
+
+            TaskStep approvalPending = ready.stream()
+                    .filter(step -> step.getApprovalStatus() == ApprovalStatus.PENDING)
+                    .findFirst()
+                    .orElse(null);
+            if (approvalPending != null) {
+                taskManager.updateStatus(task, TaskStatus.WAITING_USER,
+                        "等待人工审批：" + approvalPending.getTitle());
+                taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.TASK_APPROVAL_REQUIRED,
+                        approvalPending.getStepId(),
+                        "需要人工确认后才能执行：" + approvalPending.getTitle()));
                 return false;
             }
 
@@ -261,12 +305,15 @@ public class TaskRuntimeService {
                     .filter(dep -> dep != null && dep >= 1 && dep < sequence)
                     .distinct().sorted().toList();
             String enrichedDescription = "类型：" + type + "\n" + description + "\n预期输出：" + expected;
+            ApprovalStatus approvalStatus = planStep.requiresApproval() ? ApprovalStatus.PENDING : ApprovalStatus.NONE;
             TaskStep taskStep = new TaskStep(task.getTaskId() + "_step_" + sequence, sequence,
-                    planStep.title().trim(), enrichedDescription, planStep.parallelizable(), dependencies);
+                    planStep.title().trim(), enrichedDescription, planStep.parallelizable(), dependencies, approvalStatus);
             task.getSteps().add(taskStep);
             String dependencyText = dependencies.isEmpty() ? "无依赖" : "依赖 Step " + dependencies.stream().map(String::valueOf).collect(Collectors.joining(", "));
+            String approvalText = planStep.requiresApproval() ? "，需人工审批" : "";
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_PLANNED,
-                    taskStep.getStepId(), taskStep.getTitle() + "（" + dependencyText + (planStep.parallelizable() ? "，可并行" : "") + "）"));
+                    taskStep.getStepId(), taskStep.getTitle() + "（" + dependencyText
+                            + (planStep.parallelizable() ? "，可并行" : "") + approvalText + "）"));
         }
         task.touch();
     }
@@ -278,7 +325,7 @@ public class TaskRuntimeService {
         String feedback = safe(decision.feedback(), "重新检查并修正最终结果");
         TaskStep repairStep = new TaskStep(task.getTaskId() + "_step_" + sequence, sequence,
                 "补救与修正", "根据 Reviewer 反馈修正结果。\n缺失项：" + missing + "\n审核反馈：" + feedback,
-                false, dependencies);
+                false, dependencies, ApprovalStatus.NONE);
         task.getSteps().add(repairStep);
         taskManager.save(task);
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_PLANNED,
@@ -363,6 +410,13 @@ public class TaskRuntimeService {
         }
     }
 
+    private TaskStep pendingApprovalStep(ChenTask task) {
+        return task.getSteps().stream()
+                .filter(step -> step.getApprovalStatus() == ApprovalStatus.PENDING)
+                .findFirst()
+                .orElse(null);
+    }
+
     private String buildStepPrompt(ChenTask task, TaskStep step, AgentAssignment assignment) {
         String handoff = handoffService.buildHandoff(task, step, assignment);
         String memoryContext = memoryService.recallContext(task.getTenantId(), task.getOwnerId(), task.getSessionId(), task.getPrompt(), 2);
@@ -374,6 +428,7 @@ public class TaskRuntimeService {
                 当前总任务：%s
                 当前执行步骤：%s
                 步骤说明：%s
+                审批状态：%s
 
                 团队交接上下文：
                 %s
@@ -389,17 +444,8 @@ public class TaskRuntimeService {
                 %s
                 """.formatted(
                 assignment.instruction(), task.getPrompt(), step.getTitle(), step.getDescription(),
-                handoff, memoryContext.isBlank() ? "（无）" : memoryContext);
-    }
-
-    private String extractType(String description) {
-        if (description == null) return "GENERAL";
-        String marker = "类型：";
-        int index = description.indexOf(marker);
-        if (index < 0) return "GENERAL";
-        int start = index + marker.length();
-        int end = description.indexOf('\n', start);
-        return end < 0 ? description.substring(start).trim() : description.substring(start, end).trim();
+                step.getApprovalStatus().name(), handoff,
+                memoryContext.isBlank() ? "（无）" : memoryContext);
     }
 
     private String formatStepMetrics(TaskStep step) {
@@ -417,15 +463,11 @@ public class TaskRuntimeService {
     }
 
     private boolean isStopped(ChenTask task) {
-        return task.getStatus() == TaskStatus.CANCELLED || task.getStatus() == TaskStatus.PAUSED;
+        return task.getStatus() == TaskStatus.CANCELLED || task.getStatus() == TaskStatus.PAUSED
+                || task.getStatus() == TaskStatus.WAITING_USER;
     }
 
     private String safe(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
-    }
-
-    private String truncate(String value, int maxLength) {
-        if (value.length() <= maxLength) return value;
-        return value.substring(0, maxLength) + "...";
     }
 }
