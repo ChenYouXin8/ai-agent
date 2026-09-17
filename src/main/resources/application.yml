@@ -77,8 +77,6 @@ search-api:
 
 chenmanus:
   security:
-    # 开发模式默认继续兼容 body/query 中的 tenantId/userId。
-    # 生产环境建议由认证网关注入可信身份头并打开这两个开关。
     trust-identity-headers: ${CHENMANUS_TRUST_IDENTITY_HEADERS:false}
     require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
   memory:
