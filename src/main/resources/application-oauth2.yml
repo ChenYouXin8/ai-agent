@@ -1,0 +1,13 @@
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OAUTH2_ISSUER_URI}
+          audiences: ${OAUTH2_AUDIENCE:}
+
+chenmanus:
+  security:
+    mode: oauth2
+    trust-identity-headers: false
+    require-identity-headers: false
