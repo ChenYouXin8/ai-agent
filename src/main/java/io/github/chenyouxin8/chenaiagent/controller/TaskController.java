@@ -3,6 +3,7 @@ package io.github.chenyouxin8.chenaiagent.controller;
 import io.github.chenyouxin8.chenaiagent.common.ApiResponse;
 import io.github.chenyouxin8.chenaiagent.task.ChenTask;
 import io.github.chenyouxin8.chenaiagent.task.TaskEvent;
+import io.github.chenyouxin8.chenaiagent.task.TaskEventType;
 import io.github.chenyouxin8.chenaiagent.task.TaskManager;
 import io.github.chenyouxin8.chenaiagent.task.TaskRuntimeService;
 import org.springframework.web.bind.annotation.*;
@@ -28,14 +29,17 @@ public class TaskController {
         if (request == null || request.prompt() == null || request.prompt().isBlank()) {
             return ApiResponse.badRequest("任务内容不能为空");
         }
-        ChenTask task = taskManager.create(request.prompt().trim());
+        ChenTask task = taskManager.create(request.prompt().trim(), request.userId(), request.sessionId());
         runtime.start(task.getTaskId());
         return ApiResponse.ok(task);
     }
 
     @GetMapping
-    public ApiResponse<List<ChenTask>> list() {
-        return ApiResponse.ok(taskManager.list());
+    public ApiResponse<List<ChenTask>> list(
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String sessionId
+    ) {
+        return ApiResponse.ok(taskManager.list(userId, sessionId));
     }
 
     @GetMapping("/{taskId}")
@@ -77,12 +81,12 @@ public class TaskController {
         emitter.onTimeout(() -> taskManager.unsubscribe(taskId, listener));
         try {
             emitter.send(SseEmitter.event().name("connected")
-                    .data(new TaskEvent(taskId, io.github.chenyouxin8.chenaiagent.task.TaskEventType.MESSAGE, null, "已连接 ChenManus 2.0 实时事件流")));
+                    .data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.0 实时事件流")));
         } catch (IOException e) {
             emitter.completeWithError(e);
         }
         return emitter;
     }
 
-    public record CreateTaskRequest(String prompt) {}
+    public record CreateTaskRequest(String prompt, String userId, String sessionId) {}
 }
