@@ -4,6 +4,7 @@ public record PlanStep(
         String title,
         String description,
         String type,
-        String expectedOutput
+        String expectedOutput,
+        boolean parallelizable
 ) {
 }
