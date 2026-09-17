@@ -19,7 +19,7 @@ jobs:
       - name: Compile backend
         run: |
           chmod +x mvnw
-          ./mvnw -q -DskipTests package
+          ./mvnw -q -DskipTests compile
       - name: Run offline unit tests
         run: |
           chmod +x mvnw
