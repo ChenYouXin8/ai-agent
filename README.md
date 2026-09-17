@@ -1,8 +1,26 @@
 # chen-ai-agent
 
-**ChenManus 2.8**：基于 Spring Boot + Spring AI 的通用 Agent 运行时平台。
+**ChenManus 2.9**：基于 Spring Boot + Spring AI 的通用 Agent 运行时平台。
 
-当前能力：LLM Planner、DAG `dependsOn`、并行子 Agent、Team Planner、Agent Handoff、Reviewer/Repair、Redis Queue、Distributed Lock、DLQ、PostgreSQL/H2、租户隔离、OAuth2/OIDC JWT、RBAC、任务/步骤 Usage、Artifact 安全下载/预览，以及 `/chenmanus` Workspace。
+当前能力：LLM Planner、DAG `dependsOn`、并行子 Agent、Team Planner、Agent Handoff、Reviewer/Repair、Redis Queue、Distributed Lock、DLQ、PostgreSQL/H2、租户隔离、OAuth2/OIDC JWT、RBAC、任务/步骤 Usage、Artifact 安全下载/预览、Human Approval、Approval Policy、持久化 Event Audit，以及 `/chenmanus` Workspace。
+
+## 2.9 Human Approval / Audit
+
+Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：服务端可按步骤类型和风险关键词强制要求人工确认。审批前步骤保持 `PENDING`，任务进入 `WAITING_USER`；批准会在同一事务内将步骤置为 `APPROVED`、任务置为 `QUEUED`，并记录 `TASK_APPROVAL_GRANTED` 与 `TASK_QUEUED`；驳回会将步骤置为 `REJECTED`、任务置为 `CANCELLED`，并记录对应审批/取消事件。
+
+审计历史：
+
+`GET /api/tasks/{taskId}/events/history?limit=200&from=...&to=...&types=TASK_APPROVAL_GRANTED,TASK_CANCELLED&stepId=...`
+
+返回持久化事件，审批事件 message 会包含 `actor=<user>`，SSE 与历史事件保持同一事件语义。
+
+可通过以下配置调整策略：
+
+```bash
+CHENMANUS_APPROVAL_ENABLED=true
+CHENMANUS_APPROVAL_REQUIRED_TYPES=DEPLOY,PURCHASE,PAYMENT
+CHENMANUS_APPROVAL_REQUIRED_KEYWORDS=deploy,publish,send,delete,purchase,pay,production,发布,部署,上线,发送,删除,购买,支付,生产
+```
 
 ## 安全与多租户
 
@@ -25,8 +43,6 @@ CHENMANUS_TRUST_IDENTITY_HEADERS=true
 CHENMANUS_REQUIRE_IDENTITY_HEADERS=true
 ```
 
-网关注入 `X-Tenant-Id` / `X-User-Id` 后，服务端使用可信身份，不依赖客户端 body/query 中的租户归属。
-
 ## API
 
 | 方法 | 路径 | 说明 |
@@ -37,8 +53,11 @@ CHENMANUS_REQUIRE_IDENTITY_HEADERS=true
 | GET | `/api/tasks/{taskId}` | 任务详情 |
 | POST | `/api/tasks/{taskId}/pause` | 暂停 |
 | POST | `/api/tasks/{taskId}/resume` | 恢复 |
+| POST | `/api/tasks/{taskId}/approve` | 人工批准待审批步骤 |
+| POST | `/api/tasks/{taskId}/reject` | 人工驳回待审批步骤 |
 | POST | `/api/tasks/{taskId}/cancel` | 取消 |
 | GET | `/api/tasks/{taskId}/events` | SSE 实时事件 |
+| GET | `/api/tasks/{taskId}/events/history` | 审计历史，可按时间/类型/步骤过滤 |
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/download` | Artifact 下载 |
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/preview` | PDF/图片/文本预览 |
 | GET | `/api/tasks/admin/dlq` | 管理员查看 DLQ |
@@ -57,7 +76,7 @@ PostgreSQL / H2
         ↓
 Redis Queue → Worker → Distributed Lock
         ↓
-LLM Planner → Execution DAG
+LLM Planner → Approval Policy → Execution DAG
         ↓
 Team Planner → Agent Handoff → ChenManus child agents
         ↓

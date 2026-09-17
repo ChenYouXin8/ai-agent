@@ -14,26 +14,16 @@ public class TaskManager {
     private final Map<String, List<Consumer<TaskEvent>>> listeners = new ConcurrentHashMap<>();
     private final TaskRepository repository;
 
-    public TaskManager(TaskRepository repository) {
-        this.repository = repository;
-    }
+    public TaskManager(TaskRepository repository) { this.repository = repository; }
 
     @PostConstruct
     public void restore() {
-        try {
-            repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task));
-        } catch (Exception ignored) {
-            // Persistence is best-effort; the agent can still run with an empty in-memory store.
-        }
+        try { repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task)); }
+        catch (Exception ignored) { }
     }
 
-    public ChenTask create(String prompt) {
-        return create(prompt, "default", "anonymous", "default", TaskPriority.NORMAL);
-    }
-
-    public ChenTask create(String prompt, String ownerId, String sessionId) {
-        return create(prompt, "default", ownerId, sessionId, TaskPriority.NORMAL);
-    }
+    public ChenTask create(String prompt) { return create(prompt, "default", "anonymous", "default", TaskPriority.NORMAL); }
+    public ChenTask create(String prompt, String ownerId, String sessionId) { return create(prompt, "default", ownerId, sessionId, TaskPriority.NORMAL); }
 
     public ChenTask create(String prompt, String tenantId, String ownerId, String sessionId, TaskPriority priority) {
         String id = "task_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -56,13 +46,8 @@ public class TaskManager {
         return task;
     }
 
-    public List<ChenTask> list() {
-        return list(null, null, null);
-    }
-
-    public List<ChenTask> list(String ownerId, String sessionId) {
-        return list(null, ownerId, sessionId);
-    }
+    public List<ChenTask> list() { return list(null, null, null); }
+    public List<ChenTask> list(String ownerId, String sessionId) { return list(null, ownerId, sessionId); }
 
     public List<ChenTask> list(String tenantId, String ownerId, String sessionId) {
         String normalizedTenant = normalizeIdentity(tenantId, null);
@@ -72,13 +57,10 @@ public class TaskManager {
                 .filter(task -> normalizedTenant == null || normalizedTenant.equals(task.getTenantId()))
                 .filter(task -> normalizedOwner == null || normalizedOwner.equals(task.getOwnerId()))
                 .filter(task -> normalizedSession == null || normalizedSession.equals(task.getSessionId()))
-                .sorted(Comparator.comparing(ChenTask::getCreatedAt).reversed())
-                .toList();
+                .sorted(Comparator.comparing(ChenTask::getCreatedAt).reversed()).toList();
     }
 
-    public List<TaskEvent> history(String taskId, int limit) {
-        return repository.findEvents(taskId, limit);
-    }
+    public List<TaskEvent> history(String taskId, int limit) { return repository.findEvents(taskId, limit); }
 
     public void save(ChenTask task) {
         TaskTenantContext.set(task.getTenantId());
@@ -87,11 +69,17 @@ public class TaskManager {
     }
 
     public void publish(TaskEvent event) {
-        try {
-            repository.appendEvent(event);
-        } catch (RuntimeException ignored) {
-            // Audit log is best-effort; never stop the Agent because event persistence failed.
-        }
+        try { repository.appendEvent(event); }
+        catch (RuntimeException ignored) { }
+        publishToListeners(event);
+    }
+
+    public void publishRequired(TaskEvent event) {
+        repository.appendEvent(event);
+        publishToListeners(event);
+    }
+
+    private void publishToListeners(TaskEvent event) {
         List<Consumer<TaskEvent>> taskListeners = listeners.get(event.getTaskId());
         if (taskListeners != null) taskListeners.forEach(listener -> listener.accept(event));
     }
