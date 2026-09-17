@@ -87,14 +87,6 @@ Chroma       :8000
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/download` | 下载 Artifact |
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/preview` | PDF / 图片 / 文本预览 |
 
-创建任务：
-
-```bash
-curl -X POST http://localhost:8123/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"研究 AI Agent 最近的发展，收集多个来源后整理成报告","tenantId":"demo-tenant","userId":"demo-user","sessionId":"demo-session","priority":"HIGH"}'
-```
-
 ## 生产身份
 
 默认配置保持开发兼容：
@@ -172,7 +164,7 @@ DOCUMENT / REPORT / WRITE   → Writer
 
 ## Artifact 安全
 
-Artifact 下载默认只允许读取 `CHENMANUS_ARTIFACT_ALLOWED_ROOT` 下的真实文件，并检查 real path，拦截 `../` 路径穿越和软链接逃逸；HTTP/HTTPS 外部地址不会由后端代理下载，避免把 Artifact API 变成 SSRF 代理。
+Artifact 下载默认只允许读取 `CHENMANUS_ARTIFACT_ALLOWED_ROOT` 下的真实文件，并检查 real path，拦截路径穿越和软链接逃逸；HTTP/HTTPS 外部地址不会由后端代理下载，避免把 Artifact API 变成 SSRF 代理。
 
 默认：
 
