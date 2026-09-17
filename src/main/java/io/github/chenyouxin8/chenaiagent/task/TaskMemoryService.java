@@ -27,8 +27,12 @@ public class TaskMemoryService {
             String title = task.getTitle() == null ? "ChenManus Task" : task.getTitle();
             String result = task.getResult() == null ? "" : truncate(task.getResult(), 5000);
             String feedback = task.getReview() == null ? "" : truncate(task.getReview().feedback(), 1000);
-            String content = "任务：" + title + "\n目标：" + task.getPrompt()
-                    + "\n结果：" + result + "\n审核：" + feedback + "\n";
+            String content = "用户：" + safe(task.getOwnerId(), "anonymous") + "\n"
+                    + "会话：" + safe(task.getSessionId(), "default") + "\n"
+                    + "任务：" + title + "\n"
+                    + "目标：" + task.getPrompt() + "\n"
+                    + "结果：" + result + "\n"
+                    + "审核：" + feedback + "\n";
             Files.writeString(
                     memoryDir.resolve(task.getTaskId() + ".md"),
                     content,
@@ -37,42 +41,53 @@ public class TaskMemoryService {
                     StandardOpenOption.TRUNCATE_EXISTING
             );
         } catch (IOException ignored) {
-            // 记忆属于增强能力，不能让任务因为存储失败而失败。
+            // Memory is an enhancement and must not make a task fail.
         }
     }
 
     public String recallContext(String query, int limit) {
+        return recallContext(null, query, limit);
+    }
+
+    public String recallContext(String sessionId, String query, int limit) {
         if (!Files.isDirectory(memoryDir)) return "";
         List<Path> files;
         try (var stream = Files.list(memoryDir)) {
             files = stream
                     .filter(path -> path.getFileName().toString().endsWith(".md"))
                     .sorted(Comparator.comparing(this::lastModified).reversed())
-                    .limit(Math.max(1, limit) * 3L)
+                    .limit(Math.max(1, limit) * 5L)
                     .toList();
         } catch (IOException e) {
             return "";
         }
 
         String normalizedQuery = query == null ? "" : query.toLowerCase();
+        String normalizedSession = sessionId == null ? "" : sessionId.trim();
         List<String> hits = new ArrayList<>();
         for (Path file : files) {
             try {
                 String content = Files.readString(file, StandardCharsets.UTF_8);
+                if (!normalizedSession.isBlank() && !content.contains("会话：" + normalizedSession + "\n")) continue;
                 if (normalizedQuery.isBlank() || containsToken(content.toLowerCase(), normalizedQuery)) {
                     hits.add(truncate(content, 1800));
-                    if (hits.size() >= limit) break;
+                    if (hits.size() >= Math.max(1, limit)) break;
                 }
             } catch (IOException ignored) {
-                // Ignore an unreadable memory record and continue.
+                // Continue with other memory records.
             }
         }
         return String.join("\n\n--- 过去任务记忆 ---\n\n", hits);
     }
 
     private boolean containsToken(String content, String query) {
+        if (content.contains(query)) return true;
         for (String token : query.split("\\s+")) {
             if (token.length() >= 2 && content.contains(token)) return true;
+        }
+        for (int i = 0; i + 1 < query.length(); i++) {
+            String bigram = query.substring(i, i + 2);
+            if (bigram.trim().length() == 2 && content.contains(bigram)) return true;
         }
         return false;
     }
@@ -88,5 +103,9 @@ public class TaskMemoryService {
     private String truncate(String value, int maxLength) {
         if (value.length() <= maxLength) return value;
         return value.substring(0, maxLength) + "...";
+    }
+
+    private String safe(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 }
