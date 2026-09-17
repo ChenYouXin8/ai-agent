@@ -2,26 +2,29 @@
 
 **基于 Spring Boot + Spring AI 的恋爱心理 AI 助手与通用 Agent 运行时平台**。
 
-ChenManus 2.x 在保留原 `/manus` 能力的同时，增加任务规划、逐步执行、Reviewer、长期记忆、Artifact、并行子 Agent、DAG 调度、队列、配额与安全租户边界。
+ChenManus 2.x 在保留原 `/manus` 能力的同时，增加任务规划、DAG 调度、并行子 Agent、Reviewer、长期记忆、Artifact、队列、配额、租户隔离、安全认证与 Agent-to-Agent handoff。
 
-## ChenManus 2.7
+## ChenManus 2.8
 
 - **LLM Planner**：使用 Spring AI structured output 动态生成 2~6 个执行节点。
-- **DAG Runtime**：每个节点支持 `dependsOn`，只有依赖完成后才进入 ready；独立节点可以并发执行。
+- **DAG Runtime**：每个节点支持 `dependsOn`，依赖全部完成后才进入 ready；独立节点可以并发执行。
+- **Team Planner**：为每个 DAG 节点动态分配 Researcher / Analyst / Coder / Writer / General 角色。
+- **Agent Handoff**：节点执行前生成结构化 handoff context，并通过 `AGENT_HANDOFF` SSE 事件记录团队交接。
 - **并发配额**：`CHENMANUS_MAX_PARALLEL_STEPS` 限制单实例并行 Step 数。
 - **Redis Task Queue**：生产环境可使用 Redis 任务队列，多实例 worker 通过队列分发任务；本地可回退到内存队列。
 - **Redis Distributed Lock**：同一任务使用分布式锁，避免多实例重复执行。
+- **Dead Letter Queue**：Worker 异常或任务失败后进入 DLQ，管理员可以查看并 replay。
 - **Crash Recovery**：应用启动时恢复未完成任务，任务步骤和指标从数据库继续。
-- **PostgreSQL / H2**：本地默认 H2，Docker Compose 使用 PostgreSQL；保存逻辑采用 UPDATE → INSERT，避免绑定 H2 `MERGE` 语法。
-- **租户级配额**：支持按 `tenantId` 限制进行中的任务数量与查询范围。
-- **可信身份模式**：开发模式兼容 body/query 的 `tenantId/userId`；生产可由认证网关注入 `X-Tenant-Id / X-User-Id`，并开启可信身份校验。
-- **租户级语义记忆隔离**：VectorStore 与文件回退都会带 tenant scope，避免不同租户之间互相召回任务记忆。
+- **PostgreSQL / H2**：本地默认 H2，Docker Compose 使用 PostgreSQL；保存逻辑采用 UPDATE → INSERT。
+- **租户隔离**：任务、查询、配额与语义长期记忆按 tenant scope 隔离。
+- **OAuth2/OIDC Resource Server**：可选 JWT 模式，从 JWT subject 和 tenant claim 获取身份；支持角色 claim 到 Spring Security authorities 的映射。
+- **RBAC**：OAuth2 模式下租户配额和 DLQ 运维接口限制为 `TENANT_ADMIN` / `PLATFORM_ADMIN`。
 - **Reviewer + Repair**：结果由独立 Reviewer 审核；不通过时自动生成一次补救步骤并二次审核。
-- **角色化 Agent**：Researcher / Analyst / Coder / Writer / General。
 - **真实工具事件**：通过 `ToolCallback` wrapper 捕获 TOOL_STARTED / TOOL_COMPLETED / TOOL_FAILED。
 - **Metrics**：记录任务/步骤耗时、模型调用次数、实际/估算 token 与估算成本。
 - **Artifact**：自动识别 PDF、DOCX、XLSX、CSV、图片、ZIP、TXT 等交付路径，并提供安全下载与浏览器预览 API。
-- **Workspace**：`/chenmanus` 展示队列、DAG、优先级、并行步骤、Reviewer、Artifacts、工具事件和 Usage。
+- **Artifact 安全**：下载只允许安全根目录下的真实文件，拦截路径穿越、软链接逃逸与 HTTP/HTTPS 外部代理。
+- **Workspace**：`/chenmanus` 展示队列、DAG、优先级、Team Handoff、Reviewer、Artifacts、工具事件、Usage 与 DLQ 状态。
 
 ## 环境要求
 
@@ -68,17 +71,33 @@ docker compose up -d --build
 Frontend     :5173
 Backend      :8123
 PostgreSQL  :5432
-Redis        :6379
+Redis       :6379
 Chroma       :8000
 ```
+
+Docker Compose 的 `SPRING_PROFILES_ACTIVE` 默认是 `local`；生产启用 OAuth2 时设置为 `oauth2`，并提供 `OAUTH2_ISSUER_URI`。
+
+## OAuth2 / OIDC
+
+启用：
+
+```bash
+SPRING_PROFILES_ACTIVE=oauth2
+OAUTH2_ISSUER_URI=https://idp.example.com/realms/chenmanus
+OAUTH2_AUDIENCE=https://api.example.com
+```
+
+Resource Server 会根据 `issuer-uri` 校验 JWT 的 issuer，并可使用 `audiences` 校验 `aud` claim；应用自定义 converter 会读取 `roles`、`realm_access.roles` 和 `permissions` 并映射为 Spring Security roles。 citeturn640166search0turn640166search1
+
+多租户 OAuth2 token 需要提供 `tenant_id` 或 `tenant` claim；缺失时请求被拒绝，而不是落入默认租户。
 
 ## 任务 API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/tasks` | 创建并进入任务队列 |
-| GET | `/api/tasks?tenantId=&userId=&sessionId=` | 按租户/用户/会话查询任务 |
-| GET | `/api/tasks/quota?tenantId=` | 查询租户当前任务配额 |
+| GET | `/api/tasks?tenantId=&userId=&sessionId=` | 查询任务；OAuth2 模式身份来自 JWT |
+| GET | `/api/tasks/quota?tenantId=` | 查询租户任务配额 |
 | GET | `/api/tasks/{taskId}` | 获取任务详情、DAG、Reviewer、Artifact、指标 |
 | POST | `/api/tasks/{taskId}/pause` | 暂停 |
 | POST | `/api/tasks/{taskId}/resume` | 恢复并重新入队 |
@@ -86,38 +105,15 @@ Chroma       :8000
 | GET | `/api/tasks/{taskId}/events` | SSE 实时事件 |
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/download` | 下载 Artifact |
 | GET | `/api/tasks/{taskId}/artifacts/{artifactId}/preview` | PDF / 图片 / 文本预览 |
-
-## 生产身份
-
-默认配置保持开发兼容：
-
-```bash
-CHENMANUS_TRUST_IDENTITY_HEADERS=false
-CHENMANUS_REQUIRE_IDENTITY_HEADERS=false
-```
-
-接入认证网关后建议：
-
-```bash
-CHENMANUS_TRUST_IDENTITY_HEADERS=true
-CHENMANUS_REQUIRE_IDENTITY_HEADERS=true
-```
-
-认证网关应在完成真实用户认证后注入：
-
-```text
-X-Tenant-Id: tenant-a
-X-User-Id: user-123
-```
-
-开启后 task API 不再以 body/query 提供的身份覆盖可信请求头。直接暴露应用且允许客户端自行设置这些头并不能形成完整的身份认证，因此生产部署仍应由可信网关或认证层负责身份校验。
+| GET | `/api/tasks/admin/dlq` | 管理员查看 DLQ |
+| POST | `/api/tasks/admin/dlq/replay` | 管理员重放 DLQ 任务 |
 
 ## Runtime 架构
 
 ```text
-User / Auth Gateway
+User / OIDC IdP / Auth Gateway
  ↓
-Trusted Tenant + User Context
+JWT → Tenant + User + Roles
  ↓
 TaskController
  ↓
@@ -125,13 +121,15 @@ TaskManager ───────────────→ PostgreSQL / H2
  ↓
 Redis Queue → Worker → Distributed Lock
  ↓
-LLM Planner ←────────────── Semantic Memory (tenant scoped)
+LLM Planner ←────────────── Tenant-scoped Semantic Memory
  ↓
 Execution DAG
- ├── Researcher ─→ ChenManus ─→ Tools / MCP
- ├── Researcher ─→ ChenManus ─→ Tools / MCP   ← parallel
- ├── Analyst    ─→ ChenManus
- └── Coder      ─→ ChenManus ─→ Files
+ ├── Team Planner → Researcher → ChenManus → Tools / MCP
+ ├── Team Planner → Researcher → ChenManus → Tools / MCP   ← parallel
+ ├── Team Planner → Analyst    → ChenManus
+ └── Team Planner → Coder      → ChenManus → Files
+               ↑
+          Agent Handoff
  ↓
 Artifact + Metrics
  ↓
@@ -142,6 +140,8 @@ Reviewer
 Tenant-scoped Task Memory
  ↓
 Final Result
+
+Failure → Dead Letter Queue → Admin Replay
 ```
 
 ## 角色路由
@@ -160,7 +160,7 @@ DOCUMENT / REPORT / WRITE   → Writer
 - `chen_task_steps`
 - `chen_task_artifacts`
 
-`chen_tasks.tenant_id` 是任务隔离主键维度；`chen_task_steps.depends_on` 保存 DAG 依赖，`parallelizable` 控制可并行节点。
+`chen_tasks.tenant_id` 是任务隔离主维度；`chen_task_steps.depends_on` 保存 DAG 依赖，`parallelizable` 控制可并行节点。
 
 ## Artifact 安全
 
@@ -182,9 +182,14 @@ CHENMANUS_MAX_PARALLEL_STEPS=4
 # 租户配额
 CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT=20
 
-# 可信身份
-CHENMANUS_TRUST_IDENTITY_HEADERS=false
-CHENMANUS_REQUIRE_IDENTITY_HEADERS=false
+# OAuth2/OIDC
+SPRING_PROFILES_ACTIVE=oauth2
+OAUTH2_ISSUER_URI=https://idp.example.com/issuer
+OAUTH2_AUDIENCE=https://api.example.com
+
+# legacy 可信身份网关模式
+CHENMANUS_SECURITY_TRUST_IDENTITY_HEADERS=false
+CHENMANUS_SECURITY_REQUIRE_IDENTITY_HEADERS=false
 
 # Artifact 安全根目录
 CHENMANUS_ARTIFACT_ALLOWED_ROOT=./data
@@ -196,7 +201,7 @@ CHENMANUS_OUTPUT_COST_PER_1K=0.0
 
 ## CI
 
-GitHub Actions 会执行后端 Maven compile/package、离线单元测试和前端 npm build。当前离线测试覆盖持久化、配额、队列、指标、Artifact、可信身份和租户级 Memory 隔离；依赖真实模型、第三方 API 或外网服务的集成测试不作为默认离线 CI 门槛。
+GitHub Actions 会执行后端 Maven compile/package、离线单元测试和前端 npm build。离线测试覆盖持久化、配额、队列/DLQ、指标、Artifact、角色路由与身份隔离；依赖真实模型、第三方 API 或外网服务的集成测试不作为默认离线 CI 门槛。
 
 ## 兼容性
 
@@ -204,11 +209,11 @@ GitHub Actions 会执行后端 Maven compile/package、离线单元测试和前�
 
 ## 下一层
 
-- Redis Streams / 延迟队列与死信队列
-- 真正的模型 Usage / provider bill 核算
-- 多 Agent 动态 Team Planner 与 Agent-to-Agent handoff
+- Redis Streams / 延迟队列与消费组
+- 真正的 provider Usage / bill 核算
+- Agent Team 动态协作、人工介入与审批节点
 - Artifact 对象存储、版本历史与在线编辑
-- OAuth2/OIDC / JWT 与细粒度 RBAC
+- 更细粒度的 RBAC / ABAC 与审计日志
 
 ## 许可证
 
