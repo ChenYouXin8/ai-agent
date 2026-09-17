@@ -3,16 +3,21 @@ package io.github.chenyouxin8.chenaiagent.task;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestIdentityServiceTest {
 
@@ -30,6 +35,7 @@ class RequestIdentityServiceTest {
 
         assertEquals("tenant-header", service.tenantId(request, "tenant-body"));
         assertEquals("user-header", service.userId(request, "user-body"));
+        assertFalse(service.isAdmin(request));
     }
 
     @Test
@@ -64,6 +70,23 @@ class RequestIdentityServiceTest {
 
         assertEquals("tenant-from-jwt", service.tenantId(new MockHttpServletRequest(), "tenant-body"));
         assertEquals("user-from-jwt", service.userId(new MockHttpServletRequest(), "user-body"));
+    }
+
+    @Test
+    void oauth2AdminRoleIsExposed() {
+        RequestIdentityService service = new RequestIdentityService(false, false, "oauth2");
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject("admin-user")
+                .claim("tenant_id", "tenant-a")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(
+                jwt,
+                List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"))));
+
+        assertTrue(service.isAdmin(new MockHttpServletRequest()));
     }
 
     @Test
