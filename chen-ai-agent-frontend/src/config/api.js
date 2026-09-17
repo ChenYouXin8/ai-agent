@@ -1,4 +1,4 @@
-/** ChenManus 2.8 API */
+/** ChenManus 2.9 API */
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export const ENDPOINTS = {
@@ -7,8 +7,11 @@ export const ENDPOINTS = {
   tasks: `${API_BASE}/tasks`,
   task: (taskId, query = '') => `${API_BASE}/tasks/${taskId}${query}`,
   taskEvents: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/events${query}`,
+  taskEventHistory: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/events/history${query}`,
   taskPause: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/pause${query}`,
   taskResume: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/resume${query}`,
+  taskApprove: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/approve${query}`,
+  taskReject: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/reject${query}`,
   taskCancel: (taskId, query = '') => `${API_BASE}/tasks/${taskId}/cancel${query}`,
   artifact: (taskId, artifactId, query = '') => `${API_BASE}/tasks/${taskId}/artifacts/${artifactId}/download${query}`,
   artifactPreview: (taskId, artifactId, query = '') => `${API_BASE}/tasks/${taskId}/artifacts/${artifactId}/preview${query}`,
