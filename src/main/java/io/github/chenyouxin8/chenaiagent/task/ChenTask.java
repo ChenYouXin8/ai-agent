@@ -18,6 +18,12 @@ public class ChenTask implements Serializable {
     private final List<Artifact> artifacts = new ArrayList<>();
     private long createdAt = System.currentTimeMillis();
     private volatile long updatedAt = createdAt;
+    private volatile long startedAt;
+    private volatile long completedAt;
+    private volatile long durationMs;
+    private volatile long estimatedInputTokens;
+    private volatile long estimatedOutputTokens;
+    private volatile double estimatedCost;
     private volatile String result;
     private volatile String error;
     private volatile String planSummary;
