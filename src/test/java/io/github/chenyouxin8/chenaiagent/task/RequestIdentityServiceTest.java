@@ -3,7 +3,6 @@ package io.github.chenyouxin8.chenaiagent.task;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -66,7 +65,7 @@ class RequestIdentityServiceTest {
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
 
         assertEquals("tenant-from-jwt", service.tenantId(new MockHttpServletRequest(), "tenant-body"));
         assertEquals("user-from-jwt", service.userId(new MockHttpServletRequest(), "user-body"));
@@ -99,7 +98,7 @@ class RequestIdentityServiceTest {
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
 
         assertThrows(ResponseStatusException.class,
                 () -> service.tenantId(new MockHttpServletRequest(), "tenant-body"));
