@@ -20,7 +20,8 @@ public class TaskRepository {
         List<ChenTask> tasks = jdbc.query("""
                 SELECT task_id, prompt, title, status, created_at, updated_at,
                        started_at, completed_at, duration_ms,
-                       estimated_input_tokens, estimated_output_tokens, estimated_cost,
+                       estimated_input_tokens, estimated_output_tokens,
+                       actual_input_tokens, actual_output_tokens, model_call_count, estimated_cost,
                        result, error, plan_summary, tenant_id, owner_id, session_id, priority,
                        review_passed, review_feedback, review_missing_items
                 FROM chen_tasks ORDER BY created_at DESC
@@ -29,18 +30,29 @@ public class TaskRepository {
         return tasks;
     }
 
+    public int countActiveTasks(String tenantId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM chen_tasks
+                WHERE tenant_id = ?
+                  AND status IN ('QUEUED', 'PLANNING', 'RUNNING', 'PAUSED', 'WAITING_USER', 'REVIEWING')
+                """, Integer.class, tenantId);
+        return count == null ? 0 : count;
+    }
+
     public synchronized void save(ChenTask task) {
         int updated = jdbc.update("""
                 UPDATE chen_tasks SET prompt=?, title=?, status=?, updated_at=?,
                     started_at=?, completed_at=?, duration_ms=?,
-                    estimated_input_tokens=?, estimated_output_tokens=?, estimated_cost=?,
+                    estimated_input_tokens=?, estimated_output_tokens=?,
+                    actual_input_tokens=?, actual_output_tokens=?, model_call_count=?, estimated_cost=?,
                     result=?, error=?, plan_summary=?, tenant_id=?, owner_id=?, session_id=?, priority=?,
                     review_passed=?, review_feedback=?, review_missing_items=?
                 WHERE task_id=?
                 """,
                 task.getPrompt(), task.getTitle(), task.getStatus().name(), task.getUpdatedAt(),
                 task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
-                task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(), task.getEstimatedCost(),
+                task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(),
+                task.getActualInputTokens(), task.getActualOutputTokens(), task.getModelCallCount(), task.getEstimatedCost(),
                 task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
                 task.getSessionId(), task.getPriority().name(),
                 task.getReview() == null ? null : task.getReview().passed(),
@@ -52,14 +64,16 @@ public class TaskRepository {
                     INSERT INTO chen_tasks (
                         task_id, prompt, title, status, created_at, updated_at,
                         started_at, completed_at, duration_ms,
-                        estimated_input_tokens, estimated_output_tokens, estimated_cost,
+                        estimated_input_tokens, estimated_output_tokens,
+                        actual_input_tokens, actual_output_tokens, model_call_count, estimated_cost,
                         result, error, plan_summary, tenant_id, owner_id, session_id, priority,
                         review_passed, review_feedback, review_missing_items
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     task.getTaskId(), task.getPrompt(), task.getTitle(), task.getStatus().name(),
                     task.getCreatedAt(), task.getUpdatedAt(), task.getStartedAt(), task.getCompletedAt(), task.getDurationMs(),
-                    task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(), task.getEstimatedCost(),
+                    task.getEstimatedInputTokens(), task.getEstimatedOutputTokens(),
+                    task.getActualInputTokens(), task.getActualOutputTokens(), task.getModelCallCount(), task.getEstimatedCost(),
                     task.getResult(), task.getError(), task.getPlanSummary(), task.getTenantId(), task.getOwnerId(),
                     task.getSessionId(), task.getPriority().name(),
                     task.getReview() == null ? null : task.getReview().passed(),
@@ -74,23 +88,28 @@ public class TaskRepository {
                         step_id, task_id, seq, title, description, status,
                         output, error, started_at, completed_at, duration_ms,
                         retry_count, parallelizable, depends_on,
-                        estimated_input_tokens, estimated_output_tokens
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        estimated_input_tokens, estimated_output_tokens,
+                        actual_input_tokens, actual_output_tokens, model_call_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     step.getStepId(), task.getTaskId(), step.getSequence(), step.getTitle(), step.getDescription(),
                     step.getStatus().name(), step.getOutput(), step.getError(), step.getStartedAt(),
                     step.getCompletedAt(), step.getDurationMs(), step.getRetryCount(), step.isParallelizable(),
-                    encodeDependencies(step.getDependsOn()), step.getEstimatedInputTokens(), step.getEstimatedOutputTokens());
+                    encodeDependencies(step.getDependsOn()), step.getEstimatedInputTokens(), step.getEstimatedOutputTokens(),
+                    step.getActualInputTokens(), step.getActualOutputTokens(), step.getModelCallCount());
         }
 
         jdbc.update("DELETE FROM chen_task_artifacts WHERE task_id = ?", task.getTaskId());
         for (Artifact artifact : task.getArtifacts()) {
             jdbc.update("""
-                    INSERT INTO chen_task_artifacts (artifact_id, task_id, name, type, path, created_at, version, size_bytes, media_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO chen_task_artifacts (
+                        artifact_id, task_id, name, type, path, created_at,
+                        version, size_bytes, media_type, checksum
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     artifact.getArtifactId(), task.getTaskId(), artifact.getName(), artifact.getType(),
-                    artifact.getPath(), artifact.getCreatedAt(), artifact.getVersion(), artifact.getSizeBytes(), artifact.getMediaType());
+                    artifact.getPath(), artifact.getCreatedAt(), artifact.getVersion(), artifact.getSizeBytes(),
+                    artifact.getMediaType(), artifact.getChecksum());
         }
     }
 
@@ -102,12 +121,13 @@ public class TaskRepository {
         task.getSteps().addAll(jdbc.query("""
                 SELECT step_id, seq, title, description, status, output, error,
                        started_at, completed_at, duration_ms, retry_count,
-                       parallelizable, depends_on, estimated_input_tokens, estimated_output_tokens
+                       parallelizable, depends_on, estimated_input_tokens, estimated_output_tokens,
+                       actual_input_tokens, actual_output_tokens, model_call_count
                 FROM chen_task_steps WHERE task_id = ? ORDER BY seq
                 """, taskStepRowMapper(), task.getTaskId()));
 
         task.getArtifacts().addAll(jdbc.query("""
-                SELECT artifact_id, name, type, path, created_at, version, size_bytes, media_type
+                SELECT artifact_id, name, type, path, created_at, version, size_bytes, media_type, checksum
                 FROM chen_task_artifacts WHERE task_id = ? ORDER BY created_at
                 """, artifactRowMapper(), task.getTaskId()));
     }
@@ -124,6 +144,9 @@ public class TaskRepository {
             task.setDurationMs(rs.getLong("duration_ms"));
             task.setEstimatedInputTokens(rs.getLong("estimated_input_tokens"));
             task.setEstimatedOutputTokens(rs.getLong("estimated_output_tokens"));
+            task.setActualInputTokens(rs.getLong("actual_input_tokens"));
+            task.setActualOutputTokens(rs.getLong("actual_output_tokens"));
+            task.setModelCallCount(rs.getLong("model_call_count"));
             task.setEstimatedCost(rs.getDouble("estimated_cost"));
             task.setResult(rs.getString("result"));
             task.setError(rs.getString("error"));
@@ -154,6 +177,9 @@ public class TaskRepository {
             step.setRetryCount(rs.getInt("retry_count"));
             step.setEstimatedInputTokens(rs.getLong("estimated_input_tokens"));
             step.setEstimatedOutputTokens(rs.getLong("estimated_output_tokens"));
+            step.setActualInputTokens(rs.getLong("actual_input_tokens"));
+            step.setActualOutputTokens(rs.getLong("actual_output_tokens"));
+            step.setModelCallCount(rs.getLong("model_call_count"));
             return step;
         };
     }
@@ -166,6 +192,7 @@ public class TaskRepository {
             artifact.setVersion(rs.getInt("version"));
             artifact.setSizeBytes(rs.getLong("size_bytes"));
             artifact.setMediaType(rs.getString("media_type"));
+            artifact.setChecksum(rs.getString("checksum"));
             return artifact;
         };
     }
