@@ -17,8 +17,9 @@ ChenManus 2.x 在保留原 `/manus` 能力的同时，增加任务规划、DAG �
 - **Crash Recovery**：应用启动时恢复未完成任务，任务步骤和指标从数据库继续。
 - **PostgreSQL / H2**：本地默认 H2，Docker Compose 使用 PostgreSQL；保存逻辑采用 UPDATE → INSERT。
 - **租户隔离**：任务、查询、配额与语义长期记忆按 tenant scope 隔离。
-- **OAuth2/OIDC Resource Server**：可选 JWT 模式，从 JWT subject 和 tenant claim 获取身份；支持角色 claim 到 Spring Security authorities 的映射。
-- **RBAC**：OAuth2 模式下租户配额和 DLQ 运维接口限制为 `TENANT_ADMIN` / `PLATFORM_ADMIN`。
+- **OAuth2/OIDC Resource Server**：可选 JWT 模式，从 JWT subject 和 tenant claim 获取身份；支持 `roles`、`realm_access.roles`、`permissions` 映射。
+- **RBAC**：`TENANT_ADMIN` 可管理本租户任务，`PLATFORM_ADMIN` 可跨租户访问任务；普通用户只能访问自己的任务。
+- **JWT 安全校验**：OAuth2 模式支持 issuer 校验，并可选校验 `aud` claim。
 - **Reviewer + Repair**：结果由独立 Reviewer 审核；不通过时自动生成一次补救步骤并二次审核。
 - **真实工具事件**：通过 `ToolCallback` wrapper 捕获 TOOL_STARTED / TOOL_COMPLETED / TOOL_FAILED。
 - **Metrics**：记录任务/步骤耗时、模型调用次数、实际/估算 token 与估算成本。
@@ -75,21 +76,32 @@ Redis       :6379
 Chroma       :8000
 ```
 
-Docker Compose 的 `SPRING_PROFILES_ACTIVE` 默认是 `local`；生产启用 OAuth2 时设置为 `oauth2`，并提供 `OAUTH2_ISSUER_URI`。
-
 ## OAuth2 / OIDC
 
-启用：
+默认仍是 `legacy` 模式。生产环境可以使用 JWT Resource Server：
 
 ```bash
-SPRING_PROFILES_ACTIVE=oauth2
-OAUTH2_ISSUER_URI=https://idp.example.com/realms/chenmanus
-OAUTH2_AUDIENCE=https://api.example.com
+CHENMANUS_SECURITY_MODE=oauth2
+CHENMANUS_OIDC_ISSUER_URI=https://idp.example.com/realms/chenmanus
+CHENMANUS_OIDC_AUDIENCE=https://api.example.com
 ```
 
-Resource Server 会根据 `issuer-uri` 校验 JWT 的 issuer，并可使用 `audiences` 校验 `aud` claim；应用自定义 converter 会读取 `roles`、`realm_access.roles` 和 `permissions` 并映射为 Spring Security roles。
+OAuth2 模式下：
 
-多租户 OAuth2 token 需要提供 `tenant_id` 或 `tenant` claim；缺失时请求被拒绝，而不是落入默认租户。
+- `sub` 或 `user_id` 提供用户身份。
+- `tenant_id` 或 `tenant` 提供租户身份；缺失时拒绝请求，不落到默认租户。
+- `roles`、`realm_access.roles`、`permissions` 映射为 Spring Security authorities。
+- `TENANT_ADMIN` 可以访问本租户其它用户的任务；`PLATFORM_ADMIN` 可以跨租户访问任务。
+- `aud` 校验只有配置 `CHENMANUS_OIDC_AUDIENCE` 时才启用。
+
+Legacy + 可信网关模式可使用：
+
+```bash
+CHENMANUS_TRUST_IDENTITY_HEADERS=true
+CHENMANUS_REQUIRE_IDENTITY_HEADERS=true
+```
+
+此时由网关注入 `X-Tenant-Id` / `X-User-Id`，服务端拒绝缺失身份头。
 
 ## 任务 API
 
@@ -97,7 +109,7 @@ Resource Server 会根据 `issuer-uri` 校验 JWT 的 issuer，并可使用 `aud
 |------|------|------|
 | POST | `/api/tasks` | 创建并进入任务队列 |
 | GET | `/api/tasks?tenantId=&userId=&sessionId=` | 查询任务；OAuth2 模式身份来自 JWT |
-| GET | `/api/tasks/quota?tenantId=` | 查询租户任务配额 |
+| GET | `/api/tasks/quota?tenantId=` | 查询租户任务配额（OAuth2 需管理员角色） |
 | GET | `/api/tasks/{taskId}` | 获取任务详情、DAG、Reviewer、Artifact、指标 |
 | POST | `/api/tasks/{taskId}/pause` | 暂停 |
 | POST | `/api/tasks/{taskId}/resume` | 恢复并重新入队 |
@@ -183,13 +195,13 @@ CHENMANUS_MAX_PARALLEL_STEPS=4
 CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT=20
 
 # OAuth2/OIDC
-SPRING_PROFILES_ACTIVE=oauth2
-OAUTH2_ISSUER_URI=https://idp.example.com/issuer
-OAUTH2_AUDIENCE=https://api.example.com
+CHENMANUS_SECURITY_MODE=oauth2
+CHENMANUS_OIDC_ISSUER_URI=https://idp.example.com/issuer
+CHENMANUS_OIDC_AUDIENCE=https://api.example.com
 
 # legacy 可信身份网关模式
-CHENMANUS_SECURITY_TRUST_IDENTITY_HEADERS=false
-CHENMANUS_SECURITY_REQUIRE_IDENTITY_HEADERS=false
+CHENMANUS_TRUST_IDENTITY_HEADERS=false
+CHENMANUS_REQUIRE_IDENTITY_HEADERS=false
 
 # Artifact 安全根目录
 CHENMANUS_ARTIFACT_ALLOWED_ROOT=./data
@@ -201,7 +213,7 @@ CHENMANUS_OUTPUT_COST_PER_1K=0.0
 
 ## CI
 
-GitHub Actions 会执行后端 Maven compile/package、离线单元测试和前端 npm build。离线测试覆盖持久化、配额、队列/DLQ、指标、Artifact、角色路由与身份隔离；依赖真实模型、第三方 API 或外网服务的集成测试不作为默认离线 CI 门槛。
+GitHub Actions 会执行后端 Maven compile/package、离线单元测试和前端 npm build。离线测试覆盖持久化、配额、队列/DLQ、指标、Artifact、角色路由、身份与租户隔离；依赖真实模型、第三方 API 或外网服务的集成测试不作为默认离线 CI 门槛。
 
 ## 兼容性
 
