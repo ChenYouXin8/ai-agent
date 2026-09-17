@@ -1,23 +1,26 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
+import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.JdbcTest;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@JdbcTest
 class TaskRepositoryTest {
-
-    @Autowired
-    JdbcTemplate jdbcTemplate;
 
     @Test
     void shouldPersistTaskStepsArtifactsAndReview() {
-        TaskRepository repository = new TaskRepository(jdbcTemplate);
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:task_repo_test;DB_CLOSE_DELAY=-1");
+        dataSource.setUser("sa");
+
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
+        TaskRepository repository = new TaskRepository(new JdbcTemplate(dataSource));
+
         ChenTask task = new ChenTask("task_test_001", "测试一个持久化任务");
         task.setTitle("持久化测试");
         task.setOwnerId("user-a");
