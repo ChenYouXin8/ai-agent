@@ -110,3 +110,37 @@ CREATE TABLE IF NOT EXISTS chen_task_events (
 
 CREATE INDEX IF NOT EXISTS idx_chen_task_events_task_time
     ON chen_task_events(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chen_task_templates (
+    template_id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(128) NOT NULL,
+    owner_id VARCHAR(128) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    prompt_template TEXT NOT NULL,
+    priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL',
+    approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chen_task_templates_scope
+    ON chen_task_templates(tenant_id, owner_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chen_task_schedules (
+    schedule_id VARCHAR(64) PRIMARY KEY,
+    template_id VARCHAR(64) NOT NULL,
+    tenant_id VARCHAR(128) NOT NULL,
+    owner_id VARCHAR(128) NOT NULL,
+    cron VARCHAR(128) NOT NULL,
+    timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    next_run_at BIGINT NOT NULL,
+    last_run_at BIGINT NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    CONSTRAINT fk_task_schedule_template FOREIGN KEY (template_id) REFERENCES chen_task_templates(template_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chen_task_schedules_due
+    ON chen_task_schedules(enabled, next_run_at);
