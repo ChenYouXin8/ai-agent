@@ -5,7 +5,6 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 @Service
@@ -27,7 +26,7 @@ public class TaskRuntimeService {
     public void pause(String taskId) {
         ChenTask task = taskManager.get(taskId);
         if (task.getStatus() == TaskStatus.RUNNING) {
-            taskManager.updateStatus(task, TaskStatus.PAUSED, "任务已暂停，将在当前执行阶段结束后保持暂停状态");
+            taskManager.updateStatus(task, TaskStatus.PAUSED, "任务已暂停，将在当前 Agent 执行阶段结束后保持暂停状态");
         }
     }
 
@@ -52,23 +51,43 @@ public class TaskRuntimeService {
             taskManager.updateStatus(task, TaskStatus.PLANNING, "正在分析任务并生成执行计划");
             createPlan(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.PLAN_CREATED, null,
-                    "已生成 " + task.getSteps().size() + " 个执行步骤"));
+                    "已生成 " + task.getSteps().size() + " 个执行阶段"));
 
-            taskManager.updateStatus(task, TaskStatus.RUNNING, "开始执行任务");
-            for (TaskStep step : task.getSteps()) {
-                if (task.getStatus() == TaskStatus.CANCELLED) return;
-                if (task.getStatus() == TaskStatus.PAUSED) return;
-                runStep(task, step);
-            }
+            // 2.0-alpha：计划与执行解耦。当前仍由现有 ChenManus 作为统一执行器，避免重复调用模型。
+            completePlanningMilestones(task);
+            if (task.getStatus() == TaskStatus.CANCELLED || task.getStatus() == TaskStatus.PAUSED) return;
 
+            taskManager.updateStatus(task, TaskStatus.RUNNING, "ChenManus 开始执行核心任务");
+            TaskStep executionStep = task.getSteps().stream()
+                    .filter(s -> "执行 Agent".equals(s.getTitle())).findFirst().orElseThrow();
+            runAgent(task, executionStep);
+
+            if (task.getStatus() == TaskStatus.CANCELLED || task.getStatus() == TaskStatus.PAUSED) return;
             taskManager.updateStatus(task, TaskStatus.REVIEWING, "正在检查执行结果");
-            task.setResult("任务执行完成，共执行 " + task.getSteps().size() + " 个步骤。\n" +
-                    task.getSteps().stream().map(TaskStep::getOutput).filter(s -> s != null && !s.isBlank())
-                            .reduce("", (a, b) -> a + b + "\n").trim());
+            TaskStep reviewStep = task.getSteps().stream()
+                    .filter(s -> "验收结果".equals(s.getTitle())).findFirst().orElse(null);
+            if (reviewStep != null) {
+                reviewStep.setStatus(StepStatus.COMPLETED);
+                reviewStep.setOutput("基础验收通过：Agent 已返回执行结果");
+                taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED,
+                        reviewStep.getStepId(), reviewStep.getOutput()));
+            }
+            task.setResult(task.getSteps().stream().map(TaskStep::getOutput)
+                    .filter(s -> s != null && !s.isBlank()).reduce("", (a, b) -> a + b + "\n").trim());
             taskManager.updateStatus(task, TaskStatus.COMPLETED, "任务完成");
         } catch (Exception e) {
             task.setError(e.getMessage());
             taskManager.updateStatus(task, TaskStatus.FAILED, "任务失败: " + e.getMessage());
+        }
+    }
+
+    private void completePlanningMilestones(ChenTask task) {
+        for (TaskStep step : task.getSteps()) {
+            if ("执行 Agent".equals(step.getTitle()) || "验收结果".equals(step.getTitle())) continue;
+            step.setStatus(StepStatus.COMPLETED);
+            step.setOutput("计划阶段已完成，具体工具调用由 ChenManus 在执行阶段自主决定");
+            taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED,
+                    step.getStepId(), step.getOutput()));
         }
     }
 
@@ -84,7 +103,7 @@ public class TaskRuntimeService {
         if (containsAny(prompt, "报告", "pdf", "文档", "总结", "整理")) {
             addStep(task, "整理结果", "组织执行结果并生成可交付内容");
         }
-        addStep(task, "执行 Agent", "由 ChenManus 调度工具完成核心任务");
+        addStep(task, "执行 Agent", "由 ChenManus 调度现有工具完成核心任务");
         addStep(task, "验收结果", "检查任务是否完成并整理最终输出");
     }
 
@@ -93,14 +112,13 @@ public class TaskRuntimeService {
         task.getSteps().add(new TaskStep(task.getTaskId() + "_step_" + sequence, sequence, title, description));
     }
 
-    private void runStep(ChenTask task, TaskStep step) {
+    private void runAgent(ChenTask task, TaskStep step) {
         step.setStatus(StepStatus.RUNNING);
         step.setStartedAt(System.currentTimeMillis());
         taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_STARTED, step.getStepId(), step.getTitle()));
         try {
-            String executionPrompt = "你的当前任务是：" + task.getPrompt() + "\n当前阶段：" + step.getTitle() + "\n" + step.getDescription();
             ChenManus agent = new ChenManus(tools, chatModel);
-            String output = agent.run(executionPrompt);
+            String output = agent.run(task.getPrompt());
             step.setOutput(output);
             step.setStatus(StepStatus.COMPLETED);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED, step.getStepId(), output));
