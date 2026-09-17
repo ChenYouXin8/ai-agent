@@ -1,5 +1,7 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -11,12 +13,33 @@ import java.util.function.Consumer;
 public class TaskManager {
     private final Map<String, ChenTask> tasks = new ConcurrentHashMap<>();
     private final Map<String, List<Consumer<TaskEvent>>> listeners = new ConcurrentHashMap<>();
+    private final TaskRepository repository;
+
+    public TaskManager(TaskRepository repository) {
+        this.repository = repository;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void restore() {
+        try {
+            repository.findAll().forEach(task -> tasks.put(task.getTaskId(), task));
+        } catch (Exception ignored) {
+            // Persistence is best-effort; the agent can still run with an empty in-memory store.
+        }
+    }
 
     public ChenTask create(String prompt) {
+        return create(prompt, "anonymous", "default");
+    }
+
+    public ChenTask create(String prompt, String ownerId, String sessionId) {
         String id = "task_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         ChenTask task = new ChenTask(id, prompt);
         task.setTitle(prompt.length() > 32 ? prompt.substring(0, 32) + "..." : prompt);
+        task.setOwnerId(normalizeIdentity(ownerId, "anonymous"));
+        task.setSessionId(normalizeIdentity(sessionId, "default"));
         tasks.put(id, task);
+        save(task);
         publish(new TaskEvent(id, TaskEventType.TASK_CREATED, null, "任务已创建"));
         return task;
     }
@@ -28,7 +51,22 @@ public class TaskManager {
     }
 
     public List<ChenTask> list() {
-        return tasks.values().stream().sorted(Comparator.comparing(ChenTask::getCreatedAt).reversed()).toList();
+        return list(null, null);
+    }
+
+    public List<ChenTask> list(String ownerId, String sessionId) {
+        String normalizedOwner = normalizeIdentity(ownerId, null);
+        String normalizedSession = normalizeIdentity(sessionId, null);
+        return tasks.values().stream()
+                .filter(task -> normalizedOwner == null || normalizedOwner.equals(task.getOwnerId()))
+                .filter(task -> normalizedSession == null || normalizedSession.equals(task.getSessionId()))
+                .sorted(Comparator.comparing(ChenTask::getCreatedAt).reversed())
+                .toList();
+    }
+
+    public void save(ChenTask task) {
+        task.touch();
+        repository.save(task);
     }
 
     public void publish(TaskEvent event) {
@@ -47,7 +85,7 @@ public class TaskManager {
 
     public void updateStatus(ChenTask task, TaskStatus status, String message) {
         task.setStatus(status);
-        task.touch();
+        save(task);
         publish(new TaskEvent(task.getTaskId(), eventType(status), null, message));
     }
 
@@ -60,5 +98,10 @@ public class TaskManager {
             case FAILED -> TaskEventType.TASK_FAILED;
             default -> TaskEventType.MESSAGE;
         };
+    }
+
+    private String normalizeIdentity(String value, String fallback) {
+        if (value == null || value.isBlank()) return fallback;
+        return value.trim().substring(0, Math.min(128, value.trim().length()));
     }
 }
