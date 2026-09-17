@@ -242,9 +242,9 @@ public class TaskRuntimeService {
     }
 
     private void createPlan(ChenTask task) {
-        String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 3);
+        String memoryContext = memoryService.recallContext(task.getTenantId(), task.getOwnerId(), task.getSessionId(), task.getPrompt(), 3);
         String planningPrompt = task.getPrompt();
-        if (!memoryContext.isBlank()) planningPrompt += "\n\n以下是同一用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
+        if (!memoryContext.isBlank()) planningPrompt += "\n\n以下是同一租户/用户/会话的历史任务记忆，仅用于参考：\n" + memoryContext;
 
         LlmPlanner.PlanResult planResult = planner.createPlanWithUsage(planningPrompt);
         metricsService.recordActualUsage(task,
@@ -365,7 +365,7 @@ public class TaskRuntimeService {
 
     private String buildStepPrompt(ChenTask task, TaskStep step, AgentAssignment assignment) {
         String handoff = handoffService.buildHandoff(task, step, assignment);
-        String memoryContext = memoryService.recallContext(task.getOwnerId(), task.getSessionId(), task.getPrompt(), 2);
+        String memoryContext = memoryService.recallContext(task.getTenantId(), task.getOwnerId(), task.getSessionId(), task.getPrompt(), 2);
 
         return """
                 你是 ChenManus 2.0 团队中的执行 Agent。
