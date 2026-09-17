@@ -9,9 +9,7 @@ const routes = [
   { path: '/manus', name: 'manus', component: ManusView },
 ]
 
-const router = createRouter({
+export default createRouter({
   history: createWebHistory(),
   routes,
 })
-
-export default router
