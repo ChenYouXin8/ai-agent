@@ -1,5 +1,8 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -11,28 +14,28 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TaskMemoryService {
 
     private final Path memoryDir;
+    private final VectorStore vectorStore;
 
-    public TaskMemoryService(@Value("${chenmanus.memory.dir:./data/task-memory}") String memoryDir) {
+    public TaskMemoryService(
+            @Value("${chenmanus.memory.dir:./data/task-memory}") String memoryDir,
+            VectorStore vectorStore
+    ) {
         this.memoryDir = Path.of(memoryDir);
+        this.vectorStore = vectorStore;
     }
 
     public void remember(ChenTask task) {
+        String content = buildContent(task);
+
+        // File storage remains the durable fallback and is useful for direct debugging/export.
         try {
             Files.createDirectories(memoryDir);
-            String title = task.getTitle() == null ? "ChenManus Task" : task.getTitle();
-            String result = task.getResult() == null ? "" : truncate(task.getResult(), 5000);
-            String feedback = task.getReview() == null ? "" : truncate(task.getReview().feedback(), 1000);
-            String content = "用户：" + safe(task.getOwnerId(), "anonymous") + "\n"
-                    + "会话：" + safe(task.getSessionId(), "default") + "\n"
-                    + "任务：" + title + "\n"
-                    + "目标：" + task.getPrompt() + "\n"
-                    + "结果：" + result + "\n"
-                    + "审核：" + feedback + "\n";
             Files.writeString(
                     memoryDir.resolve(task.getTaskId() + ".md"),
                     content,
@@ -41,15 +44,69 @@ public class TaskMemoryService {
                     StandardOpenOption.TRUNCATE_EXISTING
             );
         } catch (IOException ignored) {
-            // Memory is an enhancement and must not make a task fail.
+            // File memory is best-effort.
+        }
+
+        // Semantic memory uses the existing Spring AI VectorStore with strict session scoping.
+        try {
+            vectorStore.add(List.of(new Document(
+                    content,
+                    Map.of(
+                            "memory_type", "task_memory",
+                            "task_id", task.getTaskId(),
+                            "owner_id", safe(task.getOwnerId(), "anonymous"),
+                            "session_id", safe(task.getSessionId(), "default")
+                    )
+            )));
+        } catch (RuntimeException ignored) {
+            // Semantic memory is an enhancement; file memory still remains available.
         }
     }
 
     public String recallContext(String query, int limit) {
-        return recallContext(null, query, limit);
+        return recallContext(null, null, query, limit);
     }
 
     public String recallContext(String sessionId, String query, int limit) {
+        return recallContext(null, sessionId, query, limit);
+    }
+
+    public String recallContext(String ownerId, String sessionId, String query, int limit) {
+        int topK = Math.max(1, Math.min(limit, 8));
+
+        try {
+            String filter = "memory_type == 'task_memory'";
+            if (ownerId != null && !ownerId.isBlank()) {
+                filter += " && owner_id == '" + escapeFilter(ownerId) + "'";
+            }
+            if (sessionId != null && !sessionId.isBlank()) {
+                filter += " && session_id == '" + escapeFilter(sessionId) + "'";
+            }
+
+            List<Document> documents = vectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(query == null || query.isBlank() ? "ChenManus task" : query)
+                            .topK(topK)
+                            .similarityThreshold(0.15)
+                            .filterExpression(filter)
+                            .build()
+            );
+            if (documents != null && !documents.isEmpty()) {
+                return documents.stream()
+                        .map(Document::getText)
+                        .filter(text -> text != null && !text.isBlank())
+                        .map(text -> truncate(text, 2200))
+                        .reduce((a, b) -> a + "\n\n--- 相关历史任务 ---\n\n" + b)
+                        .orElse("");
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to lexical file memory.
+        }
+
+        return lexicalRecall(ownerId, sessionId, query, topK);
+    }
+
+    private String lexicalRecall(String ownerId, String sessionId, String query, int limit) {
         if (!Files.isDirectory(memoryDir)) return "";
         List<Path> files;
         try (var stream = Files.list(memoryDir)) {
@@ -63,21 +120,35 @@ public class TaskMemoryService {
         }
 
         String normalizedQuery = query == null ? "" : query.toLowerCase();
+        String normalizedOwner = ownerId == null ? "" : ownerId.trim();
         String normalizedSession = sessionId == null ? "" : sessionId.trim();
         List<String> hits = new ArrayList<>();
         for (Path file : files) {
             try {
                 String content = Files.readString(file, StandardCharsets.UTF_8);
+                if (!normalizedOwner.isBlank() && !content.contains("用户：" + normalizedOwner + "\n")) continue;
                 if (!normalizedSession.isBlank() && !content.contains("会话：" + normalizedSession + "\n")) continue;
                 if (normalizedQuery.isBlank() || containsToken(content.toLowerCase(), normalizedQuery)) {
                     hits.add(truncate(content, 1800));
-                    if (hits.size() >= Math.max(1, limit)) break;
+                    if (hits.size() >= limit) break;
                 }
             } catch (IOException ignored) {
                 // Continue with other memory records.
             }
         }
         return String.join("\n\n--- 过去任务记忆 ---\n\n", hits);
+    }
+
+    private String buildContent(ChenTask task) {
+        String title = task.getTitle() == null ? "ChenManus Task" : task.getTitle();
+        String result = task.getResult() == null ? "" : truncate(task.getResult(), 5000);
+        String feedback = task.getReview() == null ? "" : truncate(task.getReview().feedback(), 1000);
+        return "用户：" + safe(task.getOwnerId(), "anonymous") + "\n"
+                + "会话：" + safe(task.getSessionId(), "default") + "\n"
+                + "任务：" + title + "\n"
+                + "目标：" + task.getPrompt() + "\n"
+                + "结果：" + result + "\n"
+                + "审核：" + feedback + "\n";
     }
 
     private boolean containsToken(String content, String query) {
@@ -90,6 +161,10 @@ public class TaskMemoryService {
             if (bigram.trim().length() == 2 && content.contains(bigram)) return true;
         }
         return false;
+    }
+
+    private String escapeFilter(String value) {
+        return value.replace("'", "''");
     }
 
     private long lastModified(Path path) {
