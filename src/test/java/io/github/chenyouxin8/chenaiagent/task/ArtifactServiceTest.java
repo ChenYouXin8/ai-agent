@@ -25,6 +25,41 @@ class ArtifactServiceTest {
     }
 
     @Test
+    void plainUrlDoesNotCreateGhostPathArtifact() {
+        ChenTask task = new ChenTask("task_artifact_url", "url");
+        TaskManager taskManager = mock(TaskManager.class);
+        ArtifactService service = new ArtifactService();
+
+        service.capture(task, "下载 https://example.com/report.pdf 与本地 /data/local.csv", taskManager);
+
+        List<String> paths = task.getArtifacts().stream().map(Artifact::getPath).toList();
+        assertEquals(List.of("/data/local.csv"), paths);
+    }
+
+    @Test
+    void markdownLinkUrlIsCapturedOnceWithoutGhost() {
+        ChenTask task = new ChenTask("task_artifact_markdown", "markdown");
+        TaskManager taskManager = mock(TaskManager.class);
+        ArtifactService service = new ArtifactService();
+
+        service.capture(task, "见 [报告](https://example.com/report.pdf) 获取详情", taskManager);
+
+        List<String> paths = task.getArtifacts().stream().map(Artifact::getPath).toList();
+        assertEquals(List.of("https://example.com/report.pdf"), paths);
+    }
+
+    @Test
+    void urlWithPortDoesNotCreateGhostPathArtifact() {
+        ChenTask task = new ChenTask("task_artifact_port", "port");
+        TaskManager taskManager = mock(TaskManager.class);
+        ArtifactService service = new ArtifactService();
+
+        service.capture(task, "预览 http://localhost:8080/report.pdf 完成", taskManager);
+
+        assertEquals(0, task.getArtifacts().size());
+    }
+
+    @Test
     void shouldCreateChecksumAndBumpVersionWhenArtifactContentChanges() throws Exception {
         Path file = Files.createTempFile("chenmanus-artifact-", ".txt");
         try {

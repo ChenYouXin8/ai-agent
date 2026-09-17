@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -17,7 +18,9 @@ public class ArtifactService {
 
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^]]+)\\]\\(([^)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt))\\)", Pattern.CASE_INSENSITIVE);
     // [A-Za-z]:[\\/] 匹配 Windows 盘符绝对路径（C:\ 或 C:/）——否则 Windows 上的绝对路径工具输出无法被捕获为 Artifact
-    private static final Pattern PATH = Pattern.compile("(?<!https?://)(?:[A-Za-z]:[\\\\/]|\\./|data/|/)[^\\s)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PATH = Pattern.compile("(?:[A-Za-z]:[\\\\/]|\\./|data/|/)[^\\s)]+\\.(pdf|docx|xlsx|csv|png|jpg|jpeg|zip|txt)", Pattern.CASE_INSENSITIVE);
+    // RFC 3986 合法字符集：URL 止于空白、括号或非 ASCII 标点（如中文逗号），使紧随其后的本地路径不被吞入区间
+    private static final Pattern URL = Pattern.compile("(?i)https?://[\\w\\-.~:/?#\\[\\]@!$&'()*+,;=%]+");
 
     public void capture(ChenTask task, String output, TaskManager taskManager) {
         if (output == null || output.isBlank()) return;
@@ -27,12 +30,28 @@ public class ArtifactService {
             addArtifact(task, markdown.group(1), markdown.group(2), taskManager);
         }
 
+        // URL 内部以 / 开头的片段（如 //example.com/x.pdf 或 host:8080 后的 /x.pdf）会被 PATH 误当本地路径，
+        // 负向后行断言防不住——幽灵匹配起点的前文是 "https:" 或 host，永远不等于 "https://"。改为跳过 URL 区间内的匹配
+        List<int[]> urlSpans = new java.util.ArrayList<>();
+        Matcher urls = URL.matcher(output);
+        while (urls.find()) {
+            urlSpans.add(new int[]{urls.start(), urls.end()});
+        }
+
         Matcher paths = PATH.matcher(output);
         while (paths.find()) {
+            if (insideUrlSpan(paths.start(), urlSpans)) continue;
             String path = paths.group();
             String name = Path.of(path).getFileName() == null ? path : Path.of(path).getFileName().toString();
             addArtifact(task, name, path, taskManager);
         }
+    }
+
+    private boolean insideUrlSpan(int start, List<int[]> urlSpans) {
+        for (int[] span : urlSpans) {
+            if (start >= span[0] && start < span[1]) return true;
+        }
+        return false;
     }
 
     private void addArtifact(ChenTask task, String name, String path, TaskManager taskManager) {
