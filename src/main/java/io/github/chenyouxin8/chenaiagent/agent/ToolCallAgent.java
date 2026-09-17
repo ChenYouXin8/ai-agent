@@ -5,6 +5,7 @@ import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.chat.client.ChatClient;
@@ -20,6 +21,10 @@ public class ToolCallAgent extends ReActAgent {
     private ToolCallback[] availableTools;
     private ChatResponse toolCallChatResponse;
     private ToolObserver toolObserver;
+    private long actualInputTokens;
+    private long actualOutputTokens;
+    private long modelCallCount;
+    private String lastModel;
 
     @FunctionalInterface
     public interface ToolObserver {
@@ -98,6 +103,7 @@ public class ToolCallAgent extends ReActAgent {
                     .chatResponse();
 
             this.toolCallChatResponse = chatResponse;
+            recordUsage(chatResponse);
             AssistantMessage assistantMessage = chatResponse.getResult().getOutput();
             String result = assistantMessage.getText();
             getMessageList().add(assistantMessage);
@@ -119,6 +125,20 @@ public class ToolCallAgent extends ReActAgent {
             setState(AgentState.FINISHED);
             return false;
         }
+    }
+
+    private void recordUsage(ChatResponse response) {
+        if (response == null) return;
+        modelCallCount++;
+        if (response.getMetadata() != null) lastModel = response.getMetadata().getModel();
+        Usage usage = response.getMetadata() == null ? null : response.getMetadata().getUsage();
+        if (usage == null) return;
+        actualInputTokens += safe(usage.getPromptTokens());
+        actualOutputTokens += safe(usage.getCompletionTokens());
+    }
+
+    private long safe(Integer value) {
+        return value == null ? 0L : Math.max(0L, value.longValue());
     }
 
     @Override
