@@ -1,6 +1,19 @@
 spring:
   application:
     name: chen-ai-agent
+  datasource:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/chenmanus-db;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1}
+    username: ${DATABASE_USERNAME:sa}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: ${DATABASE_DRIVER:org.h2.Driver}
+  sql:
+    init:
+      mode: always
+  data:
+    redis:
+      url: ${REDIS_URL:redis://127.0.0.1:6379}
+      connect-timeout: 2s
+      timeout: 3s
   ai:
     mcp:
       client:
@@ -30,7 +43,6 @@ server:
   servlet:
     context-path: /api
 
-# Actuator（健康检查端点）
 management:
   endpoints:
     web:
@@ -62,3 +74,34 @@ knife4j:
 
 search-api:
   api-key: ${SEARCH_API_KEY}
+
+chenmanus:
+  security:
+    mode: ${CHENMANUS_SECURITY_MODE:legacy}
+    trust-identity-headers: ${CHENMANUS_TRUST_IDENTITY_HEADERS:false}
+    require-identity-headers: ${CHENMANUS_REQUIRE_IDENTITY_HEADERS:false}
+    legacy-admin-token: ${CHENMANUS_LEGACY_ADMIN_TOKEN:}
+    oidc:
+      issuer-uri: ${CHENMANUS_OIDC_ISSUER_URI:}
+      audience: ${CHENMANUS_OIDC_AUDIENCE:}
+  approval:
+    enabled: ${CHENMANUS_APPROVAL_ENABLED:true}
+    required-types: ${CHENMANUS_APPROVAL_REQUIRED_TYPES:DEPLOY,PURCHASE,PAYMENT}
+    required-keywords: ${CHENMANUS_APPROVAL_REQUIRED_KEYWORDS:deploy,deployment,publish,publishing,send,sending,delete,deleting,purchase,pay,payment,production,prod,shutdown,release,发布,部署,上线,发送,删除,购买,支付,生产,停机,发布配置}
+  memory:
+    dir: ./data/task-memory
+  queue:
+    redis-enabled: ${CHENMANUS_REDIS_ENABLED:false}
+    key: ${CHENMANUS_QUEUE_KEY:chenmanus:tasks}
+    poll-ms: ${CHENMANUS_QUEUE_POLL_MS:250}
+  lock:
+    redis-enabled: ${CHENMANUS_REDIS_ENABLED:false}
+  runtime:
+    max-parallel-steps: ${CHENMANUS_MAX_PARALLEL_STEPS:4}
+  quota:
+    max-active-tasks-per-tenant: ${CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT:20}
+  metrics:
+    input-cost-per-1k: ${CHENMANUS_INPUT_COST_PER_1K:0.0}
+    output-cost-per-1k: ${CHENMANUS_OUTPUT_COST_PER_1K:0.0}
+  artifacts:
+    allowed-root: ${CHENMANUS_ARTIFACT_ALLOWED_ROOT:./data}

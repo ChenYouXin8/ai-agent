@@ -1,142 +1,15 @@
 <script setup>
 const apps = [
-  {
-    path: '/love',
-    icon: '💕',
-    name: 'AI 恋爱大师',
-    desc: '聊天风格，模拟心理咨询师对话，帮你解答情感困惑',
-    color: '#fce7f3',
-    accent: '#ec4899',
-  },
-  {
-    path: '/manus',
-    icon: '🚀',
-    name: 'AI 超级智能体',
-    desc: '全能助手，可自主调用工具完成任务',
-    color: '#ede9fe',
-    accent: '#7c3aed',
-  },
+  { path: '/love', icon: '💕', name: 'AI 恋爱大师', desc: '情感对话与建议' },
+  { path: '/chenmanus', icon: '✦', name: 'ChenManus 2.0', desc: '自主规划、工具调用、任务执行与交付' },
+  { path: '/manus', icon: '🚀', name: 'ChenManus Classic', desc: '保留原版 Agent 对话入口' },
 ]
 </script>
 
 <template>
-  <div class="home">
-    <header class="home__header">
-      <h1 class="home__title">AI 应用中心</h1>
-      <p class="home__subtitle">选择一个 AI 应用，开始你的智能对话之旅</p>
-    </header>
-
-    <div class="home__cards">
-      <router-link
-        v-for="app in apps"
-        :key="app.path"
-        :to="app.path"
-        class="card"
-        :style="{ '--card-bg': app.color, '--card-accent': app.accent }"
-      >
-        <div class="card__icon">{{ app.icon }}</div>
-        <div class="card__body">
-          <h2 class="card__name">{{ app.name }}</h2>
-          <p class="card__desc">{{ app.desc }}</p>
-        </div>
-        <span class="card__arrow">→</span>
-      </router-link>
-    </div>
-  </div>
+  <div class="home"><header><div class="mark">✦</div><h1>Chen AI</h1><p>AI 应用中心</p></header><div class="cards"><router-link v-for="app in apps" :key="app.path" :to="app.path" class="card"><span class="icon">{{app.icon}}</span><div><h2>{{app.name}}</h2><p>{{app.desc}}</p></div><b>→</b></router-link></div></div>
 </template>
 
 <style scoped>
-.home {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 24px;
-  background: linear-gradient(135deg, #f5f7fb 0%, #ede9fe 50%, #fce7f3 100%);
-}
-
-.home__header {
-  text-align: center;
-  margin-bottom: 48px;
-}
-
-.home__title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin-bottom: 8px;
-}
-
-.home__subtitle {
-  font-size: 1rem;
-  color: var(--color-text-muted);
-}
-
-.home__cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 24px;
-  width: 100%;
-  max-width: 720px;
-}
-
-.card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 24px;
-  background: var(--color-surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  border: 2px solid transparent;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  cursor: pointer;
-}
-
-.card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  border-color: var(--card-accent);
-}
-
-.card__icon {
-  flex-shrink: 0;
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  background: var(--card-bg);
-  border-radius: var(--radius-md);
-}
-
-.card__body {
-  flex: 1;
-}
-
-.card__name {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: var(--color-text);
-}
-
-.card__desc {
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-}
-
-.card__arrow {
-  flex-shrink: 0;
-  font-size: 1.25rem;
-  color: var(--card-accent);
-  transition: transform 0.2s;
-}
-
-.card:hover .card__arrow {
-  transform: translateX(4px);
-}
+.home{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;background:radial-gradient(circle at top,#fff 0,#f5f5f7 55%,#ededf0 100%)}header{text-align:center;margin-bottom:35px}.mark{margin:auto;width:52px;height:52px;border-radius:15px;background:#18181b;color:#fff;display:grid;place-items:center;font-size:25px}h1{font-size:28px;margin:14px 0 4px}header p{color:#999;margin:0}.cards{display:grid;gap:13px;width:min(620px,100%)}.card{display:flex;align-items:center;gap:15px;padding:18px;background:#fff;border:1px solid #e5e5e8;border-radius:14px;text-decoration:none;color:#18181b;box-shadow:0 5px 18px rgba(0,0,0,.04);transition:.2s}.card:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(0,0,0,.08)}.icon{width:45px;height:45px;display:grid;place-items:center;border-radius:12px;background:#f1f1f3;font-size:23px}.card div{flex:1}.card h2{font-size:15px;margin:0 0 4px}.card p{font-size:12px;color:#888;margin:0}.card b{color:#aaa}
 </style>

@@ -1,230 +1,121 @@
 # chen-ai-agent
 
-**基于 Spring Boot + Spring AI 的恋爱心理 AI 助手**，集成通义千问大模型、Chroma 向量数据库、RAG 知识库问答、AI 工具调用与 MCP 外部服务扩展能力。
+**ChenManus 2.9**：基于 Spring Boot + Spring AI 的通用 Agent 运行时平台。
 
-[![Java](https://img.shields.io/badge/Java-21-blue.svg)](https://adoptium.net/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-green.svg)](https://spring.io/projects/spring-boot)
-[![Spring AI](https://img.shields.io/badge/Spring%20AI-2.0.0-green.svg)](https://spring.io/projects/spring-ai)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+当前能力：LLM Planner、DAG `dependsOn`、并行子 Agent、Team Planner、Agent Handoff、Reviewer/Repair、Redis Queue、Distributed Lock、DLQ、PostgreSQL/H2、租户隔离、OAuth2/OIDC JWT、RBAC、任务/步骤 Usage、Artifact 安全下载/预览、Human Approval、Approval Policy、持久化 Event Audit，以及 `/chenmanus` Workspace。
 
-## 功能特性
+## 2.9 Human Approval / Audit
 
-- **恋爱心理专家**：内置系统提示词，按单身/恋爱/已婚三阶段引导用户描述问题
-- **RAG 知识库问答**：从 Chroma 向量库检索恋爱文档，结合上下文提升回答专业性
-- **结构化报告**：模型按 LoveReport 格式输出标题 + 建议列表
-- **多轮对话记忆**：Kryo 文件持久化，按 chatId 隔离会话上下文
-- **内置 7 个 AI 工具**：网页搜索、网页抓取、文件操作、资源下载、终端命令、PDF生成、终止会话
-- **YuManus 智能体**：ReAct 模式自主拆解复杂任务，循环调用工具链式完成
-- **MCP 外部扩展**：通过 mcp-servers.json 声明式接入高德地图、图片搜索等外部服务
-- **统一响应 + 全局异常处理**：所有接口返回 ApiResponse，四层异常兜底
-- **接口鉴权**：Bearer Token 机制，生产环境可配置开启
+Planner 的 `requiresApproval` 会与服务端 Approval Policy 合并判断：服务端可按步骤类型和风险关键词强制要求人工确认。审批前步骤保持 `PENDING`，任务进入 `WAITING_USER`；批准会在同一事务内将步骤置为 `APPROVED`、任务置为 `QUEUED`，并记录 `TASK_APPROVAL_GRANTED` 与 `TASK_QUEUED`；驳回会将步骤置为 `REJECTED`、任务置为 `CANCELLED`，并记录对应审批/取消事件。
 
-## 环境要求
+事务语义：批准产生的重新入队发生在事务**提交之后**（`afterCompletion` 回调），事务回滚时不会入队，且内存中的任务状态会自动从数据库恢复，避免 worker 消费回滚后的脏状态。
 
-- JDK 21
-- Python 3.11+（运行 Chroma 向量库）
-- [通义千问 API Key](https://dashscope.console.aliyun.com/)（必需）
-- searchapi.io API Key（可选，网页搜索工具用）
+并发防护：审批状态转移使用条件更新（CAS）写入——仅当数据库中任务仍为 `WAITING_USER` 时生效。并发双审、审批与驳回/取消交错时，后到的一方会因状态已变更而失败回滚（HTTP 409），不会产生重复审批事件、重复入队或"已批准步骤 + 已取消任务"的矛盾状态。任务聚合的保存以单数据库事务写入（任务行、步骤、产物原子提交），同一实例内按任务串行化，多实例部署时由任务行锁在数据库层串行化并发保存，步骤不会被交错覆盖或重复插入。
 
-## 快速开始
+审批权限：`CHENMANUS_SECURITY_MODE=oauth2` 时仅 `TENANT_ADMIN` / `PLATFORM_ADMIN` 可审批；legacy 模式整体无鉴权（permitAll），审批接口同样放行，但审计事件中的 actor 会标记为 `legacy:<user>`（未验证身份），不会冒充已认证主体。管理接口（`/api/tasks/admin/**` 与 `/api/tasks/quota`）在 oauth2 模式下要求管理员角色；legacy 模式下默认关闭，需配置 `CHENMANUS_LEGACY_ADMIN_TOKEN` 后凭请求头 `X-Admin-Token` 访问（常量时间比较）。
 
-### 方式一：本地开发
+分布式锁：`CHENMANUS_REDIS_ENABLED=true` 时任务执行与调度加分布式锁。锁获取 fail-closed——Redis 不可用时任务留在队列中等待重试，而不是在无锁状态下并发执行；解锁通过 Lua CAS 脚本原子完成（仅当锁仍属于当前持有者才删除），TTL 作为 Redis 故障期间的最终安全网。
+
+审计历史：
+
+`GET /api/tasks/{taskId}/events/history?limit=200&from=...&to=...&types=TASK_APPROVAL_GRANTED,TASK_CANCELLED&stepId=...`
+
+返回持久化事件，审批事件 message 会包含 `actor=<user>`，SSE 与历史事件保持同一事件语义。所有任务事件（含 `TASK_APPROVAL_REQUIRED` 与步骤/工具事件）均强制持久化：写入失败会使当次操作失败并回滚，不会静默丢失。历史查询的 `from`/`to`/`types`/`stepId` 过滤在数据库侧先于条数限制执行，任意时间段的事件均可检索（单次最多返回 `limit` 条，上限 500）。事件按 `created_at` 与自增 `seq` 双键排序，同毫秒事件保持插入顺序；审计事件不随任务删除而级联清除（外键 RESTRICT），删除任务需先显式清理事件。
+
+可通过以下配置调整策略：
 
 ```bash
-# 1. 启动 Chroma 向量数据库
-pip install chromadb
-chroma run --host 127.0.0.1 --port 8000
-
-# 2. 克隆项目
-git clone https://github.com/ChenYouXin8/ai-agent.git
-cd ai-agent
-
-# 3. 配置 API Key
-cp .env.example .env
-# 编辑 .env，填入 AI_DASHSCOPE_API_KEY
-
-# 4. 启动
-./mvnw spring-boot:run -Dspring.profiles.active=local
+CHENMANUS_APPROVAL_ENABLED=true
+CHENMANUS_APPROVAL_REQUIRED_TYPES=DEPLOY,PURCHASE,PAYMENT
+CHENMANUS_APPROVAL_REQUIRED_KEYWORDS=deploy,publish,send,delete,purchase,pay,production,发布,部署,上线,发送,删除,购买,支付,生产
 ```
 
-访问 http://localhost:8123/api/swagger-ui.html 查看接口文档。
+## 安全与多租户
 
-### 方式二：Docker 一键部署（推荐）
-
-**一条命令启动全部服务**（后端 + Chroma + 前端）：
+OAuth2 模式：
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/ChenYouXin8/ai-agent.git
-cd ai-agent
+CHENMANUS_SECURITY_MODE=oauth2
+CHENMANUS_OIDC_ISSUER_URI=https://idp.example.com/realms/chenmanus
+CHENMANUS_OIDC_AUDIENCE=https://api.example.com
+```
 
-# 2. 配置 API Key
+JWT 的 `sub`/`user_id` 提供用户身份，`tenant_id`/`tenant` 提供租户身份；缺少租户 claim 会拒绝请求。`roles`、`realm_access.roles`、`permissions` 映射为 Spring Security roles。
+
+`TENANT_ADMIN` 可以管理本租户任务，`PLATFORM_ADMIN` 可以跨租户访问任务；普通用户只能访问自己的任务。配置 `CHENMANUS_OIDC_AUDIENCE` 后启用 `aud` 校验。
+
+Legacy 可信网关模式：
+
+```bash
+CHENMANUS_TRUST_IDENTITY_HEADERS=true
+CHENMANUS_REQUIRE_IDENTITY_HEADERS=true
+```
+
+## API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/tasks` | 创建任务并入队 |
+| GET | `/api/tasks` | 按 tenant/user/session 查询 |
+| GET | `/api/tasks/quota` | 租户任务配额 |
+| GET | `/api/tasks/{taskId}` | 任务详情 |
+| POST | `/api/tasks/{taskId}/pause` | 暂停 |
+| POST | `/api/tasks/{taskId}/resume` | 恢复 |
+| POST | `/api/tasks/{taskId}/approve` | 人工批准待审批步骤 |
+| POST | `/api/tasks/{taskId}/reject` | 人工驳回待审批步骤 |
+| POST | `/api/tasks/{taskId}/cancel` | 取消 |
+| GET | `/api/tasks/{taskId}/events` | SSE 实时事件 |
+| GET | `/api/tasks/{taskId}/events/history` | 审计历史，可按时间/类型/步骤过滤 |
+| GET | `/api/tasks/{taskId}/artifacts/{artifactId}/download` | Artifact 下载 |
+| GET | `/api/tasks/{taskId}/artifacts/{artifactId}/preview` | PDF/图片/文本预览 |
+| GET | `/api/tasks/admin/dlq` | 管理员查看 DLQ |
+| POST | `/api/tasks/admin/dlq/replay` | 管理员重放 DLQ |
+
+## Runtime
+
+```text
+User / OIDC / Auth Gateway
+        ↓
+JWT → Tenant + User + Roles
+        ↓
+TaskController
+        ↓
+PostgreSQL / H2
+        ↓
+Redis Queue → Worker → Distributed Lock
+        ↓
+LLM Planner → Approval Policy → Execution DAG
+        ↓
+Team Planner → Agent Handoff → ChenManus child agents
+        ↓
+Artifact + Metrics
+        ↓
+Reviewer → Repair / PASS
+        ↓
+Tenant-scoped Memory
+        ↓
+Final Result
+
+Failure → DLQ → Admin Replay
+```
+
+## Artifact 安全
+
+Artifact API 只允许读取 `CHENMANUS_ARTIFACT_ALLOWED_ROOT` 下的真实文件，并检查 real path；禁止 HTTP/HTTPS 外部地址和路径穿越/软链接逃逸。
+
+## Docker Compose
+
+```bash
 cp .env.example .env
-# 编辑 .env，填入 AI_DASHSCOPE_API_KEY
-
-# 3. 一键启动（后端 8123 + Chroma 8000 + 前端 5173）
-docker compose up -d
-
-# 4. 访问
-#   前端：http://localhost:5173
-#   后端 API：http://localhost:8123/api
-#   Swagger：http://localhost:8123/api/swagger-ui.html
-#   健康检查：http://localhost:8123/api/actuator/health
-
-# 停止
-docker compose down
-
-# 重新构建（代码变更后）
 docker compose up -d --build
 ```
 
-**Docker 部署目录结构**：
-```
-chen-ai-agent/
-├── Dockerfile              # 后端 Spring Boot 镜像
-├── Dockerfile.frontend     # 前端 Vue/Nginx 镜像
-├── docker-compose.yml      # 编排：chroma + backend + frontend
-├── .env.example           # 环境变量模板（复制为 .env 填入密钥）
-└── data/                  # 持久化数据（.gitignore，不提交）
-    ├── chroma/            #   Chroma 向量数据库文件
-    └── chat-memory/       #   Kryo 对话记忆文件
-```
+服务包含 PostgreSQL、Redis、Chroma、Spring Boot backend 和 Vue frontend。
 
-**注意事项**：
-- `AI_DASHSCOPE_API_KEY` **必须填写**，否则后端启动失败
-- `API_KEY` 未设置时为开发模式（跳过 Bearer Token 鉴权）
-- 前端默认代理 `/api/` 到后端，如需改端口可编辑 `docker-compose.yml`
+## CI
 
-## 接口列表
+GitHub Actions 执行 backend compile/package、离线单元测试和 frontend build。离线测试覆盖持久化、配额、队列/DLQ、指标、Artifact、角色路由、身份及租户隔离；live-model/第三方 API 集成测试不作为默认离线门槛。
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | /api/ai/chat | 通用对话 |
-| GET | /api/ai/manus/chat | YuManus 智能体（SSE 流式）|
-| GET | /api/ai/love/chat | 恋爱专家对话 |
-| POST | /api/ai/love/report | 结构化恋爱报告 |
-| GET | /api/ai/love/rag | RAG 知识库问答 |
-| GET | /api/ai/love/tools | 恋爱专家 + 7 个内置工具 |
-| GET | /api/ai/love/mcp | 恋爱专家 + MCP 外部工具 |
+## 兼容性
 
-```bash
-# 通用对话
-curl "http://localhost:8123/api/ai/chat?message=你好"
-
-# 恋爱专家
-curl "http://localhost:8123/api/ai/love/chat?message=我是单身该怎么扩大社交圈&chatId=user-001"
-
-# RAG 知识库问答
-curl "http://localhost:8123/api/ai/love/rag?message=异地恋怎么维持&chatId=user-001"
-
-# 结构化报告
-curl -X POST "http://localhost:8123/api/ai/love/report" \
-  -H "Content-Type: application/json" \
-  -d '{"message":"我总是追不到喜欢的女生","chatId":"user-001"}'
-
-# YuManus SSE 流式
-curl -s -N "http://localhost:8123/api/ai/manus/chat?message=查一下济南今天天气"
-```
-
-## 配置说明
-
-### 环境变量
-
-| 变量 | 说明 | 必填 |
-|------|------|------|
-| AI_DASHSCOPE_API_KEY | 通义千问 API Key | 是 |
-| SEARCH_API_KEY | searchapi.io Key（网页搜索用）| 可选 |
-| API_KEY | Bearer Token 鉴权（生产环境开启）| 可选 |
-| AMAP_MAPS_API_KEY | 高德地图 Key（MCP 用）| 可选 |
-| PEXELS_API_KEY | Pexels Key（图片搜索 MCP 用）| 可选 |
-
-### application.yml 关键配置
-
-```yaml
-spring:
-  ai:
-    openai:
-      api-key: ${AI_DASHSCOPE_API_KEY}
-      chat.options.model: qwen-max
-      embedding.options.model: text-embedding-v3
-    vectorstore:
-      chroma:
-        collection-name: love-app-knowledge
-        client.host: http://127.0.0.1
-        client.port: 8000
-    mcp:
-      client:
-        enabled: true
-        servers-configuration: classpath:mcp-servers.json
-  security:
-    api-key: ${API_KEY}   # 未设置则跳过鉴权
-server:
-  port: 8123
-  servlet.context-path: /api
-```
-
-## 内置工具集
-
-| 工具 | 说明 |
-|------|------|
-| WebSearchTool | 百度搜索（searchapi.io）|
-| WebScrapingTool | 网页 HTML 抓取（jsoup）|
-| FileOperationTool | 文件读写/复制/删除/列表 |
-| ResourceDownloadTool | 下载网络资源到本地 |
-| TerminalOperationTool | 白名单终端命令（安全版，禁止 Shell 连接符）|
-| PDFGenerationTool | 生成 PDF（内置中文字体）|
-| TerminateTool | 终止会话（Agent 自动调用）|
-
-## Agent 架构
-
-```
-BaseAgent（状态机 + N 步执行循环）
-└── ReActAgent（think/act 两阶段）
-    └── ToolCallAgent（工具集注入）
-        └── ChenManus（YuManus 全能助手）
-```
-
-## 项目结构
-
-```
-chen-ai-agent/
-├── chen-image-search-mcp-server/    # MCP 图片搜索子模块
-├── src/main/java/.../chenaiagent/
-│   ├── app/LoveApp.java             # 恋爱专家核心
-│   ├── agent/                       # Agent 智能体框架
-│   ├── tools/                       # 7 个内置工具
-│   ├── controller/                  # REST 接口
-│   ├── common/                       # ApiResponse / 异常处理
-│   ├── config/                       # Cors / Security / VectorStore
-│   └── chatmemory/                   # Kryo 文件持久化记忆
-├── src/main/resources/
-│   ├── application.yml               # 公共配置（环境变量占位）
-│   ├── application-local.yml         # 本地配置（含真实 Key，.gitignore）
-│   ├── mcp-servers.json             # MCP 配置（含密钥，.gitignore）
-│   └── document/                     # RAG 知识库文档
-├── chen-ai-agent-frontend/          # Vue 3 前端
-├── Dockerfile                        # 后端 Docker 镜像
-├── Dockerfile.frontend               # 前端 Docker 镜像
-└── docker-compose.yml               # 一键部署编排
-```
-
-## 扩展思路
-
-**简单（1-2 天）**
-- 将 ChenManus 暴露为 HTTP 接口对外服务
-- 接入微信/网页前端（chen-ai-agent-frontend 已完成前端部分）
-- 扩充知识库文档到更多领域（职场/家庭等）
-
-**中等（3-7 天）**
-- 引入 Rerank 提升 RAG 检索精度
-- 从 Chroma 迁移到 PGVector / Milvus（支持更大规模数据）
-- 在 mcp-servers.json 声明更多外部 MCP Server（零代码扩展工具集）
-
-**有挑战（1-2 周+）**
-- 多 Agent 协作链（规划/执行/审核 Agent 分工）
-- 模型路由（简单问答用 qwen-plus，复杂推理用 qwen-max）
-- Agent 自我学习（成功经验写回知识库）
-
-## 许可证
-
-MIT License
+原 `/api/ai/*` 与 `/manus` 页面继续保留；新的 `/api/tasks` 与 `/chenmanus` 提供任务化运行时。
