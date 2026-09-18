@@ -1,0 +1,37 @@
+# 本地开发配置模板（local profile）
+#
+# 用法：
+#   1. 复制本文件为 application-local.yml（该文件已被 .gitignore 与 .dockerignore 忽略，不会提交/进镜像）
+#   2. 填入真实 Key（或设置环境变量 AI_DASHSCOPE_API_KEY）
+#   3. 以 local profile 启动：SPRING_PROFILES_ACTIVE=local
+#
+# 注意：切勿把真实密钥直接写进任何会被提交的文件。
+spring:
+  application:
+    name: chen-ai-agent
+  ai:
+    openai:
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      # 优先读取环境变量 AI_DASHSCOPE_API_KEY；未设置时请把下面的占位符替换为真实 Key
+      api-key: ${AI_DASHSCOPE_API_KEY:在此填入你的通义千问Key}
+      chat:
+        options:
+          model: qwen-max
+      embedding:
+        options:
+          model: text-embedding-v3
+  security:
+    # 本地开发默认不鉴权；生产环境请通过环境变量 API_KEY 配置 Bearer Token
+    api-key: dev-only-no-auth
+server:
+  port: 8123
+  servlet:
+    context-path: /api
+
+search-api:
+  # 可选：网页搜索工具（searchapi.io）的 Key
+  api-key: ${SEARCH_API_KEY:dummy-search-key}
+
+spring_ai:
+  chroma:
+    url: http://127.0.0.1:8000

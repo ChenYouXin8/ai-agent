@@ -16,6 +16,7 @@ mcp-servers.json
 
 # Chroma 向量数据库本地数据
 .chroma/
+chroma/
 chroma.sqlite3
 
 # 临时文件夹

@@ -193,7 +193,19 @@ chen-ai-agent/
    .\mvnw.cmd spring-boot:run
    ```
 
-   也可使用本地开发 profile（`SPRING_PROFILES_ACTIVE=local`）。
+   也可使用本地开发 profile（`SPRING_PROFILES_ACTIVE=local`）。首次使用时，从模板复制一份本地配置（该文件已被 `.gitignore` 忽略，不会提交）：
+
+   ```bash
+   cp src/main/resources/application-local.example.yml src/main/resources/application-local.yml
+   ```
+
+   如需启用 MCP 外部工具（高德地图、图片搜索），再复制 MCP 配置模板并填入本地 Key：
+
+   ```bash
+   cp src/main/resources/mcp-servers.example.json src/main/resources/mcp-servers.json
+   ```
+
+   > 上述两个本地文件（`application-local.yml`、`mcp-servers.json`）仅存在于本机，同时被 `.dockerignore` 排除，不会进入镜像或提交到仓库。
 
 3. 启动前端（端口 5173，`/api` 自动代理到 8123）：
 
