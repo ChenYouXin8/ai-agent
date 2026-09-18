@@ -23,7 +23,8 @@ spring:
         enabled: true
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      api-key: ${AI_DASHSCOPE_API_KEY}
+      # 未配置时使用占位值，保证应用可零配置启动（如冒烟测试）；真实调用需通过环境变量注入有效 Key。
+      api-key: ${AI_DASHSCOPE_API_KEY:dummy-api-key}
       chat:
         options:
           model: qwen-max
@@ -38,7 +39,7 @@ spring:
           host: http://127.0.0.1
           port: 8000
   security:
-    api-key: ${API_KEY}
+    api-key: ${API_KEY:}
 
 server:
   port: 8123
@@ -56,6 +57,10 @@ management:
   health:
     chroma:
       enabled: true
+    # Redis 为可选组件（默认关闭）。健康检查与 CHENMANUS_REDIS_ENABLED 联动，
+    # 未启用 Redis 时不再因连不上 6379 而把整体健康状态拉成 DOWN。
+    redis:
+      enabled: ${CHENMANUS_REDIS_ENABLED:false}
 
 springdoc:
   swagger-ui:
@@ -69,13 +74,9 @@ springdoc:
       paths-to-match: "/**"
       packages-to-scan: io.github.chenyouxin8.chenaiagent.controller
 
-knife4j:
-  enable: true
-  setting:
-    language: zh_cn
-
 search-api:
-  api-key: ${SEARCH_API_KEY}
+  # 未配置时使用占位值，保证应用可零配置启动；联网搜索功能需配置真实 Key。
+  api-key: ${SEARCH_API_KEY:dummy-search-key}
 
 chenmanus:
   security:

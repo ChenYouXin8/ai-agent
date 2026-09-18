@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MCP stdio 服务专用日志配置。
+  stdio 传输规定：stdout 只能承载 JSON-RPC 报文，所有日志必须走 stderr，
+  否则启动日志会污染 stdout，导致客户端解析报 "No content to map due to end-of-input"。
+  因此这里把控制台 appender 显式指向 System.err；不要再用 -Dlogging.pattern.console=（空 pattern 会让 logback 初始化失败）。
+-->
+<configuration>
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="STDERR"/>
+    </root>
+</configuration>

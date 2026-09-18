@@ -69,7 +69,7 @@
 | 缓存 / 队列 | Redis 7（分布式队列、分布式锁，可选） |
 | Agent 协议 | MCP（Model Context Protocol）客户端 |
 | 文档 | Spring AI Markdown Reader、iText 9（PDF）、Kryo（记忆持久化） |
-| 接口文档 | Knife4j / springdoc OpenAPI 3 |
+| 接口文档 | springdoc-openapi v3（Swagger UI，兼容 Spring Boot 4） |
 | 前端 | Vue 3、Vite、Vue Router（Nginx 部署） |
 | 部署 | Docker Compose（PostgreSQL + Redis + Chroma + 后端 + 前端） |
 
@@ -241,7 +241,7 @@ docker compose up -d --build
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `AI_DASHSCOPE_API_KEY` | （必填） | 通义千问 API Key |
+| `AI_DASHSCOPE_API_KEY` | 占位值（可零配置启动） | 通义千问 API Key；真实对话 / 嵌入调用必须配置 |
 | `SEARCH_API_KEY` | 空 | 网页搜索工具的 API Key |
 | `API_KEY` | 空 | 旧版 `/api/ai/**` 的 API Key |
 | `DATABASE_URL` | `jdbc:h2:file:./data/chenmanus-db` | 数据库连接（可切 PostgreSQL） |
@@ -342,9 +342,11 @@ curl -X POST http://localhost:8123/api/tasks \
 通过 Spring AI MCP Client 以声明式方式接入外部服务（配置项为 `spring.ai.mcp.client.stdio.servers-configuration`，仅在本地 profile 中指向 `mcp-servers.json`）：
 
 - **高德地图**（`@amap/amap-maps-mcp-server`）：地理编码、POI、路线规划等。
-- **Pexels 图片搜索**（`chen-image-search-mcp-server` 子模块）：按关键词检索图片。
+- **Pexels 图片搜索**（`chen-image-search-mcp-server` 子模块）：按关键词检索图片。该子模块是独立 Maven 工程，不在主工程 `modules` 中，启用前需先单独打包：在项目根目录执行 `cd chen-image-search-mcp-server; ..\mvnw.cmd package`（Windows）或 `cd chen-image-search-mcp-server && ../mvnw package`（Linux/macOS）。
 
 MCP 工具与内置工具统一注册，Agent 可在同一次推理中混合调用。注意：未配置 `mcp-servers.json` 时不会启动任何 stdio 服务，应用其余功能不受影响。
+
+> **Windows 注意**：Java 的 `ProcessBuilder` 无法直接执行 `npx.cmd`，Windows 上需把高德服务的 `command` 改为 `"cmd"`、`args` 改为 `["/c", "npx", "-y", "@amap/amap-maps-mcp-server"]`（模板默认的 `npx` 适用于 Linux / macOS / Docker）。图片搜索 MCP 服务的启动参数已显式关闭 banner 与 Web 容器、并把日志重定向到 stderr，避免污染 JSON-RPC 的 stdout。
 
 ---
 

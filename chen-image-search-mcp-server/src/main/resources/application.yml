@@ -3,6 +3,12 @@ spring:
     name: chen-image-search-mcp-server
   profiles:
     active: stdio
+  # 该模块是 stdio MCP 服务：任何情况下都不启动 Web 容器、不打印 banner。
+  # 放在基础配置（而非仅 stdio profile）中，避免父进程继承的 SPRING_PROFILES_ACTIVE
+  # 覆盖掉 stdio profile 后，banner 被输出到 stdout 污染 JSON-RPC 报文。
+  main:
+    web-application-type: none
+    banner-mode: off
   # Pexels 图片搜索密钥（值来自环境变量 PEXELS_API_KEY，由父进程继承）
   pexels:
     api-key: ${PEXELS_API_KEY:}
