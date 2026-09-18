@@ -17,8 +17,10 @@ spring:
   ai:
     mcp:
       client:
+        # MCP 客户端默认开启；未配置 stdio servers-configuration 时不启动任何外部 MCP 服务，应用可正常启动。
+        # 含密钥的 stdio 服务配置（mcp-servers.json）仅在本地 profile 中加载，
+        # 见 application-local.example.yml；切勿在主配置里写死该文件路径。
         enabled: true
-        servers-configuration: classpath:mcp-servers.json
     openai:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       api-key: ${AI_DASHSCOPE_API_KEY}

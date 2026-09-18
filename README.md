@@ -129,11 +129,11 @@ chen-ai-agent/
 │   ├── controller/                     # AI / 任务 / 产物 / 管理接口
 │   ├── advisor/、config/、common/、constant/
 ├── src/main/resources/
-│   ├── application.yml                 # 主配置
-│   ├── application-local.yml           # 本地开发 profile
+│   ├── application.yml                 # 主配置（不含密钥，Key 走环境变量）
+│   ├── application-local.example.yml   # 本地开发 profile 模板（实际 local 文件已被忽略）
 │   ├── application-oauth2.yml          # OAuth2 profile
 │   ├── schema.sql                      # 建表与幂等迁移
-│   ├── mcp-servers.json                # MCP 服务配置
+│   ├── mcp-servers.example.json        # MCP 服务配置模板（实际 mcp-servers.json 已被忽略）
 │   └── document/                       # RAG 恋爱知识文档
 ├── chen-ai-agent-frontend/             # Vue 3 前端
 ├── chen-image-search-mcp-server/       # 图片搜索 MCP 子模块
@@ -259,7 +259,7 @@ docker compose up -d --build
 | `CHENMANUS_ARTIFACT_ALLOWED_ROOT` | `./data` | 产物允许访问的根目录 |
 | `CHENMANUS_INPUT_COST_PER_1K` / `CHENMANUS_OUTPUT_COST_PER_1K` | `0.0` | 每千 token 估算成本 |
 
-MCP 服务在 `src/main/resources/mcp-servers.json` 中配置（可参考 `mcp-servers.example.json`），第三方 Key 通过环境变量注入，不要提交真实密钥。
+MCP 服务在 `src/main/resources/mcp-servers.json` 中配置（可参考 `mcp-servers.example.json`），第三方 Key 通过环境变量注入。该文件含密钥、不入库也不入镜像，仅在本地 profile 中加载：先复制模板，再在 `application-local.yml` 中启用 `spring.ai.mcp.client.stdio.servers-configuration`（见 `application-local.example.yml`）。主配置不写死该路径，因此缺少该文件时应用也能正常启动。
 
 ---
 
@@ -339,12 +339,12 @@ curl -X POST http://localhost:8123/api/tasks \
 
 ## MCP 外部工具
 
-通过 Spring AI MCP Client 以声明式方式接入外部服务（`mcp-servers.json`）：
+通过 Spring AI MCP Client 以声明式方式接入外部服务（配置项为 `spring.ai.mcp.client.stdio.servers-configuration`，仅在本地 profile 中指向 `mcp-servers.json`）：
 
 - **高德地图**（`@amap/amap-maps-mcp-server`）：地理编码、POI、路线规划等。
 - **Pexels 图片搜索**（`chen-image-search-mcp-server` 子模块）：按关键词检索图片。
 
-MCP 工具与内置工具统一注册，Agent 可在同一次推理中混合调用。
+MCP 工具与内置工具统一注册，Agent 可在同一次推理中混合调用。注意：未配置 `mcp-servers.json` 时不会启动任何 stdio 服务，应用其余功能不受影响。
 
 ---
 
