@@ -307,10 +307,12 @@ public class TaskRuntimeService {
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
                 if (attempt > 0) {
-                    step.setRetryCount(attempt);
-                    step.setStatus(StepStatus.PENDING);
-                    step.setError(null);
-                    taskManager.save(task);
+                    synchronized (task) {
+                        step.setRetryCount(attempt);
+                        step.setStatus(StepStatus.PENDING);
+                        step.setError(null);
+                        taskManager.save(task);
+                    }
                     taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_RETRY,
                             step.getStepId(), "第 " + attempt + " 次重试：" + step.getTitle()));
                 }
