@@ -713,7 +713,7 @@ onBeforeUnmount(() => eventSource?.close())
                           <span class="text-[10px] text-neutral-400">{{ events.length }} events</span>
                         </div>
                         <div class="mt-4 space-y-3">
-                          <div v-for="(event, index) in events.slice(0, 40)" :key="\`\${event.eventId || event.timestamp}-\${index}\`" class="flex gap-3">
+                          <div v-for="(event, index) in events.slice(0, 40)" :key="event.eventId || event.timestamp || index" class="flex gap-3">
                             <div class="flex flex-col items-center flex-none">
                               <span class="w-2 h-2 mt-1.5 rounded-full bg-neutral-300 dark:bg-neutral-700" />
                               <span v-if="index < events.slice(0, 40).length - 1" class="w-px flex-1 mt-1 bg-neutral-200 dark:bg-neutral-800" />
