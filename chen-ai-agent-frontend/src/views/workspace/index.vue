@@ -114,6 +114,13 @@ function handleEnter(e: KeyboardEvent) {
   }
 }
 
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+    e.preventDefault()
+    newTask()
+  }
+}
+
 async function loadQuota() {
   try {
     quota.value = await TaskApi.quota(scope)
@@ -359,13 +366,17 @@ watch(isMobile, (val) => {
 }, { immediate: true, flush: 'post' })
 
 onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
   loadTasks()
   loadQuota()
   if (!isMobile.value)
     inputRef.value?.focus?.()
 })
 
-onBeforeUnmount(() => eventSource?.close())
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  eventSource?.close()
+})
 </script>
 
 <template>
