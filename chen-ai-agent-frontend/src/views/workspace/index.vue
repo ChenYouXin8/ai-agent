@@ -37,6 +37,7 @@ const prompt = ref('')
 const priority = ref<TaskPriority>('NORMAL')
 const quota = ref<QuotaView | null>(null)
 const loading = ref(false)
+const eventFilter = ref<EventFilter>('ALL')
 const events = ref<(TaskEvent & { displayType: string })[]>([])
 const scrollRef = ref<HTMLElement | null>(null)
 const inputRef = ref<any>(null)
@@ -73,6 +74,17 @@ const EVENT_NAMES = [
   'task_completed', 'task_failed', 'task_dead_lettered',
 ]
 
+const EVENT_FILTERS = [
+  { label: '全部事件', value: 'ALL' },
+  { label: '任务状态', value: 'TASK' },
+  { label: '执行步骤', value: 'STEP' },
+  { label: 'Agent / 工具', value: 'AGENT' },
+  { label: '审核 / 审批', value: 'REVIEW' },
+  { label: '产物 / 指标', value: 'RESOURCE' },
+] as const
+
+type EventFilter = typeof EVENT_FILTERS[number]['value']
+
 const collapsed = computed(() => appStore.siderCollapsed)
 const pendingApproval = computed(() => !!current.value && current.value.status === 'WAITING_USER' && hasPendingApproval(current.value))
 const steps = computed(() => current.value?.steps ?? [])
@@ -89,6 +101,19 @@ const currentHeadline = computed(() => {
 })
 const activeTaskId = computed(() => current.value?.taskId || '')
 const recentTasks = computed(() => tasks.value.slice(0, 30))
+const visibleEvents = computed(() => {
+  const filter = eventFilter.value
+  if (filter === 'ALL')
+    return events.value
+  const groups: Record<Exclude<EventFilter, 'ALL'>, string[]> = {
+    TASK: ['task_created', 'task_queued', 'task_paused', 'task_resumed', 'task_cancelled', 'task_completed', 'task_failed', 'task_dead_lettered'],
+    STEP: ['plan_created', 'step_planned', 'step_started', 'step_retry', 'step_completed', 'step_failed'],
+    AGENT: ['agent_handoff', 'tool_started', 'tool_completed', 'tool_failed'],
+    REVIEW: ['review_started', 'review_completed', 'task_approval_required', 'task_approval_granted', 'task_approval_rejected'],
+    RESOURCE: ['metrics_updated', 'artifact_created'],
+  }
+  return events.value.filter(event => groups[filter].includes(event.displayType))
+})
 
 function handleUpdateCollapsed() {
   appStore.setSiderCollapsed(!collapsed.value)
@@ -716,18 +741,26 @@ onBeforeUnmount(() => {
                       </section>
 
                       <section v-if="events.length" class="p-5 mt-5 bg-white border rounded-2xl border-neutral-200/80 dark:bg-[#17171c] dark:border-neutral-800">
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-3">
                           <div>
                             <div class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">活动日志</div>
                             <div class="mt-1 text-xs text-neutral-400">实时事件与持久化审计</div>
                           </div>
-                          <span class="text-[10px] text-neutral-400">{{ events.length }} events</span>
+                          <div class="flex items-center gap-2">
+                            <span class="hidden text-[10px] text-neutral-400 sm:inline">{{ visibleEvents.length }} events</span>
+                            <NSelect
+                              v-model:value="eventFilter"
+                              size="tiny"
+                              class="!w-28 sm:!w-32"
+                              :options="EVENT_FILTERS"
+                            />
+                          </div>
                         </div>
                         <div class="mt-4 space-y-3">
-                          <div v-for="(event, index) in events.slice(0, 40)" :key="event.eventId || event.timestamp || index" class="flex gap-3">
+                          <div v-for="(event, index) in visibleEvents.slice(0, 40)" :key="event.eventId || event.timestamp || index" class="flex gap-3">
                             <div class="flex flex-col items-center flex-none">
                               <span class="w-2 h-2 mt-1.5 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-                              <span v-if="index < events.slice(0, 40).length - 1" class="w-px flex-1 mt-1 bg-neutral-200 dark:bg-neutral-800" />
+                              <span v-if="index < visibleEvents.slice(0, 40).length - 1" class="w-px flex-1 mt-1 bg-neutral-200 dark:bg-neutral-800" />
                             </div>
                             <div class="flex-1 min-w-0 pb-2">
                               <div class="flex items-center gap-2">
