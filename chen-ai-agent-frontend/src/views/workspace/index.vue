@@ -329,17 +329,17 @@ function formatDuration(ms?: number) {
   if (!ms)
     return '—'
   if (ms < 1000)
-    return \`\${ms} ms\`
+    return `${ms} ms`
   const seconds = Math.round(ms / 100) / 10
   if (seconds < 60)
-    return \`\${seconds} s\`
-  return \`\${Math.floor(seconds / 60)}m \${Math.round(seconds % 60)}s\`
+    return `${seconds} s`
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
 }
 
 function displayTokens(actual?: number, estimated?: number) {
   if (actual && actual > 0)
     return String(actual)
-  return \`~\${estimated || 0}\`
+  return `~${estimated || 0}`
 }
 
 function canPreview(artifact: TaskArtifact) {
