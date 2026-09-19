@@ -1,6 +1,7 @@
 package io.github.chenyouxin8.chenaiagent.task;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -10,6 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
 @Service
+@Slf4j
 public class TaskManager {
     private static final int SAVE_LOCK_STRIPES = 16;
 
@@ -59,8 +61,16 @@ public class TaskManager {
     public void reload(String taskId) {
         try {
             ChenTask task = repository.find(taskId);
-            if (task != null) tasks.put(taskId, task);
-        } catch (RuntimeException ignored) { }
+            if (task != null) {
+                tasks.put(taskId, task);
+            } else {
+                tasks.remove(taskId);
+            }
+        } catch (RuntimeException e) {
+            // 数据库不可用时绝不能继续保留审批回滚后的脏聚合；淘汰缓存，后续请求只能 fail-closed
+            tasks.remove(taskId);
+            log.error("Failed to reload task {}; evicted stale in-memory aggregate", taskId, e);
+        }
     }
 
     public List<ChenTask> list() { return list(null, null, null); }
