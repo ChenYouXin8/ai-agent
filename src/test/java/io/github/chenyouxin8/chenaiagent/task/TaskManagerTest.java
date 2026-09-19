@@ -94,6 +94,23 @@ class TaskManagerTest {
     }
 
     @Test
+    void reloadEvictsStaleAggregateWhenRepositoryFails() {
+        TaskRepository repository = mock(TaskRepository.class);
+        ChenTask task = new ChenTask("task_reload_failure", "回滚重载");
+        when(repository.find("task_reload_failure")).thenReturn(task);
+        TaskManager manager = new TaskManager(repository);
+        manager.restore();
+
+        org.junit.jupiter.api.Assertions.assertEquals(task, manager.get("task_reload_failure"));
+        org.mockito.Mockito.doThrow(new IllegalStateException("数据库不可用"))
+                .when(repository).find("task_reload_failure");
+
+        manager.reload("task_reload_failure");
+
+        assertThrows(java.util.NoSuchElementException.class, () -> manager.get("task_reload_failure"));
+    }
+
+    @Test
     void restorePropagatesRepositoryFailure() {
         TaskRepository repository = mock(TaskRepository.class);
         when(repository.findAll()).thenThrow(new IllegalStateException("数据库不可用"));
