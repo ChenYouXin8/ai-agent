@@ -34,6 +34,7 @@ public class TaskRuntimeService {
     private final AgentHandoffService handoffService;
     private final TaskQueueService queueService;
     private final TaskMetricsService metricsService;
+    private final TaskApprovalPolicyService approvalPolicyService;
     private final Semaphore parallelSlots;
 
     public TaskRuntimeService(
@@ -49,6 +50,7 @@ public class TaskRuntimeService {
             AgentHandoffService handoffService,
             TaskQueueService queueService,
             TaskMetricsService metricsService,
+            TaskApprovalPolicyService approvalPolicyService,
             @Value("${chenmanus.runtime.max-parallel-steps:4}") int maxParallelSteps
     ) {
         this.taskManager = taskManager;
@@ -63,6 +65,7 @@ public class TaskRuntimeService {
         this.handoffService = handoffService;
         this.queueService = queueService;
         this.metricsService = metricsService;
+        this.approvalPolicyService = approvalPolicyService;
         this.parallelSlots = new Semaphore(Math.max(1, maxParallelSteps));
     }
 
@@ -275,12 +278,13 @@ public class TaskRuntimeService {
                     .filter(dep -> dep != null && dep >= 1 && dep < sequence)
                     .distinct().sorted().toList();
             String enrichedDescription = "类型：" + type + "\n" + description + "\n预期输出：" + expected;
-            ApprovalStatus approvalStatus = planStep.requiresApproval() ? ApprovalStatus.PENDING : ApprovalStatus.NONE;
+            TaskApprovalPolicyService.ApprovalPolicyDecision approvalDecision = approvalPolicyService.evaluate(planStep);
+            ApprovalStatus approvalStatus = approvalDecision.required() ? ApprovalStatus.PENDING : ApprovalStatus.NONE;
             TaskStep taskStep = new TaskStep(task.getTaskId() + "_step_" + sequence, sequence,
                     planStep.title().trim(), enrichedDescription, planStep.parallelizable(), dependencies, approvalStatus);
             task.getSteps().add(taskStep);
             String dependencyText = dependencies.isEmpty() ? "无依赖" : "依赖 Step " + dependencies.stream().map(String::valueOf).collect(Collectors.joining(", "));
-            String approvalText = planStep.requiresApproval() ? "，需人工审批" : "";
+            String approvalText = approvalDecision.required() ? "，需人工审批：" + approvalDecision.reason() : "";
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_PLANNED,
                     taskStep.getStepId(), taskStep.getTitle() + "（" + dependencyText
                             + (planStep.parallelizable() ? "，可并行" : "") + approvalText + "）"));
