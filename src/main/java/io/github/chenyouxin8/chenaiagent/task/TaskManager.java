@@ -124,7 +124,17 @@ public class TaskManager {
 
     private void publishToListeners(TaskEvent event) {
         List<Consumer<TaskEvent>> taskListeners = listeners.get(event.getTaskId());
-        if (taskListeners != null) taskListeners.forEach(listener -> listener.accept(event));
+        if (taskListeners == null) return;
+        // 单个 SSE 客户端断连/失效时，其 emitter 会抛异常；必须隔离并注销该监听器，
+        // 否则异常会沿 publish 冒泡到任务执行线程，把正在执行的任务误判为失败并送入 DLQ
+        for (Consumer<TaskEvent> listener : taskListeners) {
+            try {
+                listener.accept(event);
+            } catch (Exception e) {
+                log.warn("事件监听器推送失败，注销该监听器 taskId={}: {}", event.getTaskId(), e.getMessage());
+                taskListeners.remove(listener);
+            }
+        }
     }
 
     public void subscribe(String taskId, Consumer<TaskEvent> listener) {

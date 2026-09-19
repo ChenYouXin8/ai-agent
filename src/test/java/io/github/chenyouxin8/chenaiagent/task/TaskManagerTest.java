@@ -50,6 +50,28 @@ class TaskManagerTest {
     }
 
     @Test
+    void failingListenerIsRemovedAndDoesNotBreakOthersOrPublish() {
+        TaskRepository repository = mock(TaskRepository.class);
+        TaskManager manager = new TaskManager(repository);
+
+        List<TaskEvent> goodReceived = new ArrayList<>();
+        // 模拟 SSE 客户端断连：坏监听器每次推送都抛异常
+        manager.subscribe("task_publish", e -> { throw new RuntimeException("client gone"); });
+        manager.subscribe("task_publish", goodReceived::add);
+
+        TaskEvent first = new TaskEvent("task_publish", TaskEventType.TASK_CREATED, null, "任务已创建");
+        TaskEvent second = new TaskEvent("task_publish", TaskEventType.TASK_QUEUED, null, "已入队");
+        // 坏监听器异常被隔离，publish 不抛错
+        manager.publish(first);
+        manager.publish(second);
+
+        // 好监听器两次事件都收到
+        assertEquals(List.of(first, second), goodReceived);
+        // 两个事件都正常持久化
+        verify(repository, times(2)).appendEvent(any());
+    }
+
+    @Test
     void savesOfSameTaskAreSerializedWithinJvm() throws Exception {
         TaskRepository repository = mock(TaskRepository.class);
         AtomicInteger inFlight = new AtomicInteger();

@@ -113,6 +113,8 @@ public class TaskRuntimeService {
             if (task.getSteps().isEmpty()) {
                 taskManager.updateStatus(task, TaskStatus.PLANNING, "ChenManus 正在生成执行 DAG");
                 createPlan(task);
+                // 规划（LLM 调用）可能耗时较长，期间任务可能已被取消/暂停，此时不再落计划
+                if (isStopped(task)) return;
                 taskManager.save(task);
                 taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.PLAN_CREATED, null,
                         "已生成 " + task.getSteps().size() + " 个执行步骤"));
@@ -130,6 +132,7 @@ public class TaskRuntimeService {
                     decision.feedback() == null ? "审核完成" : decision.feedback()));
 
             for (int repairRound = 0; !decision.passed() && repairRound < MAX_REPAIR_ROUNDS; repairRound++) {
+                if (isStopped(task)) return;
                 TaskStep repairStep = createRepairStep(task, decision);
                 if (!runStepWithRetry(task, repairStep)) break;
                 taskManager.updateStatus(task, TaskStatus.REVIEWING, "补救步骤完成，Reviewer 正在二次验收");
@@ -264,6 +267,8 @@ public class TaskRuntimeService {
         metricsService.recordActualUsage(task,
                 planResult.actualInputTokens(), planResult.actualOutputTokens(), planResult.modelCallCount());
         Plan plan = planResult.plan();
+        // 规划 LLM 调用期间任务被取消/暂停：丢弃计划，不再落步骤、不再发 STEP_PLANNED 事件
+        if (isStopped(task)) return;
         task.setTitle(plan.title());
         task.setPlanSummary(plan.summary());
         for (PlanStep planStep : plan.steps()) {

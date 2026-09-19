@@ -93,7 +93,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - ./data/chat-memory:/app/.chat-memory
       - ./data/task-memory:/app/data/task-memory
       - ./data/artifacts:/app/data/artifacts
 

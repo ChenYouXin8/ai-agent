@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
@@ -60,7 +59,8 @@ public class TaskController {
 
     @GetMapping("/quota")
     public ApiResponse<QuotaView> quota(@RequestParam(required = false) String tenantId, HttpServletRequest httpRequest) {
-        identityService.requireAdminAccess(httpRequest);
+        // oauth2 模式由 SecurityFilterChain 限制为管理员角色；legacy 模式整体无鉴权，
+        // 配额是工作区常规展示信息，按租户只读返回（DLQ 重放等管理操作仍在 /tasks/admin 下保留令牌门禁）
         String normalizedTenant = identityService.tenantId(httpRequest, tenantId);
         return ApiResponse.ok(new QuotaView(normalizedTenant, quotaService.activeTasks(normalizedTenant), quotaService.maxActiveTasksPerTenant()));
     }
@@ -129,15 +129,17 @@ public class TaskController {
         SseEmitter emitter = new SseEmitter(0L);
         Consumer<TaskEvent> listener = event -> {
             try { emitter.send(SseEmitter.event().name(event.getType().name().toLowerCase()).data(event)); }
-            catch (IOException e) { emitter.completeWithError(e); }
+            // 客户端断连时 send 可能抛 IOException 或 AsyncRequestNotUsableException 等，统一结束该 emitter
+            catch (Exception e) { emitter.completeWithError(e); }
         };
         taskManager.subscribe(taskId, listener);
         emitter.onCompletion(() -> taskManager.unsubscribe(taskId, listener));
         emitter.onTimeout(() -> taskManager.unsubscribe(taskId, listener));
+        emitter.onError(e -> taskManager.unsubscribe(taskId, listener));
         try {
             for (TaskEvent event : taskManager.history(taskId, 200)) emitter.send(SseEmitter.event().name(event.getType().name().toLowerCase()).data(event));
             emitter.send(SseEmitter.event().name("connected").data(new TaskEvent(taskId, TaskEventType.MESSAGE, null, "已连接 ChenManus 2.9 审计事件流")));
-        } catch (IOException e) { emitter.completeWithError(e); }
+        } catch (Exception e) { emitter.completeWithError(e); }
         return emitter;
     }
 

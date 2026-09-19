@@ -33,7 +33,7 @@ spring:
           model: text-embedding-v3
     vectorstore:
       chroma:
-        collection-name: love-app-knowledge
+        collection-name: chenmanus-memory
         initialize-schema: true
         client:
           host: http://127.0.0.1

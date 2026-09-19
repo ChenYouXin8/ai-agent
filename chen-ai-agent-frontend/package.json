@@ -2,7 +2,7 @@
   "name": "chen-ai-agent-frontend",
   "version": "3.0.0",
   "private": true,
-  "description": "Chen AI Agent 前端（基于 ChatGPT Web 风格整合：智能助手 / AI 恋爱大师 / ChenManus 2.0）",
+  "description": "ChenManus 前端（桌面端工作区风格：任务型 Agent 工作台）",
   "author": "ChenYouXin",
   "scripts": {
     "dev": "vite",

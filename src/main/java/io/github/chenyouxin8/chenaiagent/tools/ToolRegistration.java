@@ -35,7 +35,7 @@ public class ToolRegistration {
     }
 
     /**
-     * 提供 ToolCallbackProvider bean，供 LoveApp 等需要 MCP 风格工具注入的组件使用
+     * 提供 ToolCallbackProvider bean，供 MCP 风格工具注入使用
      */
     @Bean
     public ToolCallbackProvider toolCallbackProvider() {

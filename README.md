@@ -1,394 +1,344 @@
-# chen-ai-agent
+# ChenManus · AI Agent 任务系统
 
-**ChenManus 2.9** —— 基于 Spring Boot + Spring AI 的通用 Agent 运行时平台，内置一个「恋爱心理 AI 助手」示例应用。
+ChenManus 是一个基于 Spring AI 的多智能体（Multi-Agent）任务编排系统。用户用一句自然语言描述目标，系统会先规划、再调度多个专业 Agent 分工执行、自动审核与补救，并在涉及高风险操作时暂停等待人工确认；前端通过 SSE 实时展示完整执行过程。
 
-平台包含两条能力线：
-
-- **ChenManus 任务运行时**：把一句自然语言需求，交给 LLM 规划成 DAG，调度多个角色子 Agent 并行/串行执行，配合人工审批、Reviewer 验收、失败重试与补救、产物管理、审计追踪，最终交付可验证的结果。
-- **恋爱心理助手（LoveApp）**：面向单身 / 恋爱 / 已婚三阶段的情感咨询专家，支持 RAG 知识库、结构化报告、多轮记忆、工具调用与 MCP 扩展。
-
----
-
-## 目录
-
-- [核心特性](#核心特性)
-- [技术栈](#技术栈)
-- [运行时架构](#运行时架构)
-- [项目结构](#项目结构)
-- [快速开始](#快速开始)
-- [配置项](#配置项)
-- [前端页面](#前端页面)
-- [HTTP API](#http-api)
-- [内置工具](#内置工具)
-- [MCP 外部工具](#mcp-外部工具)
-- [人工审批与审计](#人工审批与审计)
-- [安全与多租户](#安全与多租户)
-- [CI](#ci)
-- [兼容性说明](#兼容性说明)
-- [License](#license)
+- 后端：Spring Boot 4.1 + Spring AI 2.0（通义千问 qwen-max）
+- 前端：Vue 3 + Vite + Naive UI（单工作区聊天式界面）
+- 存储：H2（零配置本地）/ PostgreSQL（生产）、Chroma 向量记忆、Redis 可选（分布式锁与队列）
 
 ---
 
-## 核心特性
+## 功能特性
 
-### ChenManus 任务运行时
-
-- **LLM Planner**：由大模型输出结构化执行计划（标题、类型、预期输出、依赖关系、是否可并行、是否需审批），构建任务 DAG。
-- **DAG 调度与并行执行**：按依赖关系自动调度；无依赖且标记为 `parallelizable` 的步骤通过信号量并发执行（默认上限 4，可配置）。
-- **多角色子 Agent（Team Planner）**：步骤按类型分配给 `RESEARCHER` / `ANALYST` / `CODER` / `WRITER` / `GENERAL` 角色，Agent 之间通过 Handoff 上下文交接依赖结果。
-- **人工审批（Human-in-the-loop）**：部署、购买、支付等高风险步骤在执行前暂停，任务进入 `WAITING_USER`，经批准 / 驳回后继续或终止。
-- **Reviewer 验收与自修复**：步骤全部完成后由 Reviewer 审核；未通过时自动生成补救步骤并进行二次验收（最多 1 轮修复、每步最多重试 2 次）。
-- **持久化与断点恢复**：任务、步骤、产物、事件全部落库（默认 H2 文件库，可切换 PostgreSQL），每次状态变更原子写入，应用重启后可恢复。
-- **任务队列与死信队列**：本地队列或 Redis 分布式队列（按优先级），Worker 轮询执行；失败任务进入 DLQ，管理员可重放。
-- **分布式锁**：开启 Redis 后，任务执行与调度加分布式锁，支持多实例水平扩展；锁获取 fail-closed，Lua CAS 原子解锁。
-- **租户配额**：按租户限制活跃任务数（默认 20）。
-- **定时任务模板**：支持任务模板与 Cron 调度（`chen_task_templates` / `chen_task_schedules`）。
-- **产物管理（Artifact）**：从 Agent 输出中捕获文件产物，支持安全下载与预览，路径限定在允许根目录内。
-- **用量与成本指标**：记录每个任务 / 步骤的 token 用量、模型调用次数、耗时与估算成本。
-- **作用域记忆**：按租户 / 用户 / 会话隔离的语义向量记忆，规划与执行时召回相关历史。
-- **实时事件流**：SSE 推送规划、步骤、工具、审批、审查、指标等 26 类事件，并提供可过滤的持久化审计历史。
-
-### LoveApp 恋爱心理助手
-
-- **恋爱心理专家**：内置系统提示词，按单身 / 恋爱 / 已婚三阶段引导对话。
-- **RAG 知识库问答**：基于 Chroma 向量库检索恋爱知识文档（单身篇 / 恋爱篇 / 已婚篇）增强回答。
-- **结构化报告**：模型按 `LoveReport` 结构输出标题与建议列表。
-- **多轮对话记忆**：Kryo 文件持久化，按 `chatId` 隔离会话。
-- **工具调用与 MCP**：支持 7 个内置工具与高德地图、Pexels 图片搜索等 MCP 服务。
+- **自主规划**：LLM 将用户目标拆解为结构化步骤（Plan），支持任务暂停、恢复、取消（取消在规划阶段即时生效）。
+- **多智能体协作**：按步骤类型分配 RESEARCHER / ANALYST / CODER / WRITER / GENERAL 角色，Agent 间通过 Handoff 交接。
+- **工具调用**：联网搜索、网页抓取、文件操作、资源下载、终端执行、PDF 生成、任务终止；支持 MCP 扩展（高德地图、图片搜索）。
+- **审核与补救**：每个任务执行后由 Reviewer 自动验收，未通过时自动补救一轮，仍不通过则进入死信队列（DLQ），可由管理员重放。
+- **人工审批**：命中部署、发布、购买、支付、删除等高风险类型/关键词时，任务暂停等待批准或驳回。
+- **实时事件流**：SSE 推送任务全生命周期事件，断线自动重放历史，前端按事件渲染时间线。
+- **多租户与配额**：基于 tenantId / userId / sessionId 的请求身份，每租户默认最多 20 个活跃任务；支持 legacy 与 OAuth2 两种安全模式。
+- **制品管理**：任务产物（PDF、下载文件等）统一登记，支持下载与预览。
+- **可观测**：Actuator 健康检查（含数据库与 Chroma）、任务审计、指标（Token / 耗时 / 估算成本）。
 
 ---
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 语言 / 框架 | Java 21、Spring Boot 4.1.0、Spring AI 2.0.0 |
-| 大模型 | 通义千问（DashScope OpenAI 兼容接口），`qwen-max`；Embedding `text-embedding-v3` |
-| 向量库 | Chroma（RAG 知识库 / 语义记忆） |
-| 关系库 | H2 文件库（默认，零依赖启动）/ PostgreSQL 17（生产） |
-| 缓存 / 队列 | Redis 7（分布式队列、分布式锁，可选） |
-| Agent 协议 | MCP（Model Context Protocol）客户端 |
-| 文档 | Spring AI Markdown Reader、iText 9（PDF）、Kryo（记忆持久化） |
-| 接口文档 | springdoc-openapi v3（Swagger UI，兼容 Spring Boot 4） |
-| 前端 | Vue 3、Vite、Vue Router（Nginx 部署） |
-| 部署 | Docker Compose（PostgreSQL + Redis + Chroma + 后端 + 前端） |
+| 层 | 技术 | 版本 |
+| --- | --- | --- |
+| 语言 / 运行时 | Java | 21 |
+| 后端框架 | Spring Boot | 4.1.0 |
+| AI 框架 | Spring AI（OpenAI 兼容协议接入 DashScope） | 2.0.0 |
+| 大模型 / Embedding | 通义千问 qwen-max / text-embedding-v3 | dashscope-sdk 2.22.27 |
+| 数据库 | H2（本地默认）/ PostgreSQL（生产） | 随 Spring Boot |
+| 向量库 | Chroma | 1.x（HTTP API） |
+| 缓存 / 队列 | Redis（可选，分布式锁与队列） | - |
+| 工具 | Hutool、SpringDoc OpenAPI、Kryo、iText | 5.8.46 / 3.1.1 等 |
+| 前端 | Vue 3、Vite 4、TypeScript、Naive UI、Pinia、Tailwind CSS | Vue 3.2 / Vite 4 |
+| 部署 | Docker、docker-compose | - |
 
 ---
 
-## 运行时架构
+## 整体架构
 
-```text
-用户 / OIDC / 可信网关
-        ↓
-身份解析 → 租户 + 用户 + 角色
-        ↓
-   TaskController  ──→  配额校验
-        ↓
- H2 / PostgreSQL（任务聚合 + 事件审计）
-        ↓
- 任务队列（本地 / Redis）→ Worker → 分布式锁
-        ↓
- LLM Planner → 审批策略 → 执行 DAG
-        ↓
- Team Planner → Agent Handoff → ChenManus 子 Agent（工具 / MCP）
-        ↓
-   产物捕获 + 用量指标
-        ↓
- Reviewer 审核 → 补救 / 通过
-        ↓
- 作用域记忆 → 最终结果
+### 组件视图
 
-异常 → 死信队列（DLQ）→ 管理员重放
+```mermaid
+flowchart TB
+    subgraph FE["前端（Vue 3 + Vite，:5173）"]
+        UI["工作区聊天界面<br/>任务列表 / 事件时间线 / 审批 / 制品"]
+    end
+
+    subgraph BE["后端（Spring Boot，:8123，context-path=/api）"]
+        Ctl["TaskController / TaskAdminController<br/>ArtifactController（REST + SSE）"]
+        Runtime["TaskRuntimeService<br/>编排：规划→执行→审核→补救"]
+        Planner["LlmPlanner<br/>AgentTeamPlannerService"]
+        Handoff["AgentHandoffService<br/>角色分配与交接"]
+        Reviewer["TaskReviewerService"]
+        Approval["TaskApprovalService / PolicyService"]
+        Queue["TaskQueueService + TaskQueueWorker<br/>TaskQuotaService"]
+        Manager["TaskManager（内存聚合 + 事件总线）"]
+        Repo["TaskRepository（H2/PG）"]
+        Memory["TaskMemoryService（Markdown + Chroma）"]
+        Agents["ChenManus 等 ToolCallAgent<br/>ReActAgent / 7 个内置工具 / MCP"]
+        Ctl --> Runtime
+        Runtime --> Planner --> Handoff --> Agents
+        Runtime --> Reviewer
+        Runtime --> Approval
+        Runtime --> Queue --> Manager
+        Manager --> Repo
+        Runtime --> Memory
+    end
+
+    UI -- "REST / SSE（Vite 代理 /api）" --> Ctl
+    Agents -- "OpenAI 兼容协议" --> LLM[("DashScope<br/>qwen-max")]
+    Memory --> Chroma[("Chroma :8000")]
+    Queue -.可选.-> Redis[("Redis :6379")]
+    Repo --> DB[("H2 文件库 / PostgreSQL")]
 ```
 
-任务状态机：
+### 任务生命周期
 
-```text
-CREATED → QUEUED → PLANNING → RUNNING ──→ REVIEWING ──→ COMPLETED
-                        │   ↑  │            │
-                        │   └──┴──── WAITING_USER（人工审批）
-                        ├→ PAUSED           └→ 补救步骤 → 二次审核
-                        └→ FAILED / CANCELLED
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED: 创建任务
+    CREATED --> QUEUED: 入队（配额校验）
+    QUEUED --> PLANNING: Worker 拉取
+    PLANNING --> RUNNING: 计划生成
+    RUNNING --> WAITING_USER: 命中高风险策略
+    WAITING_USER --> RUNNING: 批准
+    WAITING_USER --> FAILED: 驳回
+    RUNNING --> REVIEWING: 步骤完成
+    REVIEWING --> RUNNING: 审核不通过，自动补救（最多 1 轮）
+    REVIEWING --> COMPLETED: 审核通过
+    RUNNING --> PAUSED: 暂停
+    PAUSED --> RUNNING: 恢复
+    PLANNING --> CANCELLED: 取消
+    RUNNING --> CANCELLED: 取消
+    REVIEWING --> FAILED: 补救后仍不通过
+    FAILED --> DLQ: 进入死信队列
+    DLQ --> QUEUED: 管理员重放
 ```
+
+### 后端核心包
+
+| 包 / 类 | 职责 |
+| --- | --- |
+| `controller/TaskController` | 任务 CRUD、暂停/恢复/取消、批准/驳回、SSE 事件流、历史事件、配额查询 |
+| `controller/TaskAdminController` | 死信队列查看与重放（需管理员令牌） |
+| `controller/ArtifactController` | 任务制品下载与预览 |
+| `task/TaskRuntimeService` | 核心编排：规划、执行、审核、补救、取消的状态机 |
+| `task/TaskQueueService` / `TaskQueueWorker` | 任务队列、250ms 轮询调度、并发控制（默认 4） |
+| `task/TaskManager` | 任务聚合根的内存缓存、事件持久化与 SSE 监听器管理（坏监听器自动隔离） |
+| `task/TaskRepository` | H2/PostgreSQL 持久化（`schema.sql` 自动建表） |
+| `task/LlmPlanner`（`planner` 包） | 调用 LLM 生成计划与步骤 |
+| `task/AgentTeamPlannerService` / `AgentHandoffService` | 步骤角色分配与 Agent 交接 |
+| `task/TaskReviewerService` | Reviewer 审核与补救决策 |
+| `task/TaskApprovalService` / `TaskApprovalPolicyService` | 高风险操作审批门禁与策略 |
+| `task/TaskMemoryService` | 任务记忆：本地 Markdown 摘要 + Chroma 向量检索（best-effort） |
+| `task/TaskMetricsService` | Token、耗时、模型调用次数与估算成本 |
+| `task/TaskQuotaService` | 租户活跃任务配额（默认 20） |
+| `agent/ChenManus` | 通用 ToolCallAgent（继承 `ToolCallAgent` / `ReActAgent` / `BaseAgent`） |
+| `tools/` | 7 个内置工具与统一注册（`ToolRegistration`） |
+| `config/` | CORS、MVC、OAuth2 安全配置、身份拦截器 |
+
+### 内置工具
+
+| 工具 | 说明 | 依赖 |
+| --- | --- | --- |
+| WebSearchTool | 联网搜索（searchapi.io） | 环境变量 `SEARCH_API_KEY`（未配置则不可用） |
+| WebScrapingTool | 网页内容抓取 | 无 |
+| FileOperationTool | 工作目录内文件读写 | 无 |
+| ResourceDownloadTool | 网络资源下载 | 无 |
+| TerminalOperationTool | 终端命令执行 | 无（受审批策略约束） |
+| PDFGenerationTool | 生成 PDF 制品 | 无 |
+| TerminateTool | 任务主动终止 | 无 |
+
+MCP 扩展默认不启用；在 `mcp-servers.json` 中配置后可接入高德地图、图片搜索等 stdio MCP 服务。
 
 ---
 
-## 项目结构
+## 目录结构
 
-```text
+```
 chen-ai-agent/
 ├── src/main/java/io/github/chenyouxin8/chenaiagent/
-│   ├── ChenAiAgentApplication.java     # 启动类（开启定时任务）
-│   ├── agent/                          # Agent 框架：BaseAgent → ReActAgent → ToolCallAgent → ChenManus
-│   ├── planner/                        # LLM 规划器（Plan / PlanStep）
-│   ├── task/                           # 任务运行时（39 个类，见下）
-│   ├── app/                            # LoveApp 恋爱专家
-│   ├── rag/                            # RAG 文档加载
-│   ├── chatmemory/                     # 基于文件的对话记忆
-│   ├── tools/                          # 7 个内置工具与注册
-│   ├── controller/                     # AI / 任务 / 产物 / 管理接口
-│   ├── advisor/、config/、common/、constant/
+│   ├── advisor/          # ChatClient 日志 Advisor
+│   ├── agent/            # BaseAgent / ReActAgent / ToolCallAgent / ChenManus
+│   ├── common/           # 统一响应、业务异常、全局异常处理
+│   ├── config/           # CORS、安全、MVC 配置
+│   ├── constant/         # 常量
+│   ├── controller/       # REST + SSE 控制器
+│   ├── planner/          # LLM 计划模型（Plan / PlanStep / LlmPlanner）
+│   ├── task/             # 任务编排核心（状态机、队列、审批、审核、记忆、配额…）
+│   └── tools/            # 内置工具与注册
 ├── src/main/resources/
-│   ├── application.yml                 # 主配置（不含密钥，Key 走环境变量）
-│   ├── application-local.example.yml   # 本地开发 profile 模板（实际 local 文件已被忽略）
-│   ├── application-oauth2.yml          # OAuth2 profile
-│   ├── schema.sql                      # 建表与幂等迁移
-│   ├── mcp-servers.example.json        # MCP 服务配置模板（实际 mcp-servers.json 已被忽略）
-│   └── document/                       # RAG 恋爱知识文档
+│   ├── application.yml                  # 主配置（环境变量占位）
+│   ├── application-local.example.yml    # 本地开发配置模板
+│   ├── application-oauth2.yml           # OAuth2 生产 profile
+│   ├── mcp-servers.example.json         # MCP 服务配置模板
+│   └── schema.sql                       # 数据库建表脚本
+├── src/test/            # 单元测试（真实 LLM 集成测试 ChenManusTest 默认排除）
 ├── chen-ai-agent-frontend/             # Vue 3 前端
-├── chen-image-search-mcp-server/       # 图片搜索 MCP 子模块
-├── Dockerfile / Dockerfile.frontend / docker-compose.yml
-└── pom.xml
+│   └── src/
+│       ├── api/tasks.ts                # 任务接口与 SSE 封装
+│       ├── views/workspace/index.vue   # 工作区主界面
+│       ├── views/shell/                # 侧边栏与外壳
+│       ├── components/common/          # NaiveProvider / SvgIcon / 设置弹窗
+│       ├── router/、store/、locales/、styles/
+├── docker-compose.yml
+├── Dockerfile / Dockerfile.frontend
+└── start-local.cmd       # Windows 本地一键启动后端（需按本机改 JAVA_HOME）
 ```
-
-`task/` 包关键组件：
-
-| 组件 | 职责 |
-|---|---|
-| `TaskRuntimeService` | 任务执行主流程：规划 → 调度 → 审批 → 审查 → 修复 |
-| `LlmPlanner`（planner 包） | 调用大模型生成结构化计划 |
-| `TaskManager` | 内存聚合 + 事件发布，条带锁 + 条件保存 |
-| `TaskRepository` / `TaskAutomationRepository` | JDBC 持久化（事务、CAS） |
-| `TaskQueueService` / `TaskQueueWorker` | 队列、轮询执行、死信队列 |
-| `TaskApprovalService` / `TaskApprovalPolicyService` | 人工审批与风险策略 |
-| `TaskReviewerService` | 结果验收 |
-| `AgentTeamPlannerService` / `AgentHandoffService` / `AgentRolePromptService` | 角色分配与交接 |
-| `ArtifactService` / `ArtifactAccessService` | 产物捕获与安全访问 |
-| `TaskMemoryService` | 作用域语义记忆 |
-| `TaskMetricsService` / `TaskQuotaService` | 指标与配额 |
-| `TaskScheduleService` / `TaskTemplateService` | 模板与 Cron 调度 |
-| `RedisDistributedLockService` | 分布式锁 |
-| `RequestIdentityService` / `TaskScopeService` / `TaskTenantContext` | 身份解析与租户隔离 |
 
 ---
 
-## 快速开始
+## 本地运行
 
 ### 前置要求
 
-- JDK 21
-- Node.js 22（前端）
-- Maven Wrapper（仓库自带 `mvnw`，无需单独安装 Maven）
-- Chroma（RAG / 语义记忆需要；Docker 一键启动时已包含）
-- 通义千问 API Key（DashScope）
+- **JDK 21**（必须，项目使用 Java 21）
+- **Node.js 18+**（开发环境使用 Node 22 验证）
+- **ChromaDB**（向量记忆，需本地启动；未启动时应用仍可运行，向量记忆降级）
+  ```bash
+  pip install chromadb
+  chroma run --host 127.0.0.1 --port 8000 --path ./.chroma
+  ```
+- **通义千问 API Key**（DashScope，OpenAI 兼容模式）
 
-### 方式一：本地开发（H2 文件库，无需 Redis / PostgreSQL）
-
-1. 启动 Chroma（向量库，监听 8000 端口）：
-
-   ```bash
-   docker run -d --name chroma -p 8000:8000 chromadb/chroma:0.5.15
-   ```
-
-2. 配置 API Key 并启动后端（默认端口 8123，上下文路径 `/api`）：
-
-   ```bash
-   # Linux / macOS
-   export AI_DASHSCOPE_API_KEY=sk-xxxxxxxx
-   export SEARCH_API_KEY=xxxxxxxx          # 可选，网页搜索工具
-   ./mvnw spring-boot:run
-
-   # Windows PowerShell
-   $env:AI_DASHSCOPE_API_KEY="sk-xxxxxxxx"
-   .\mvnw.cmd spring-boot:run
-   ```
-
-   也可使用本地开发 profile（`SPRING_PROFILES_ACTIVE=local`）。首次使用时，从模板复制一份本地配置（该文件已被 `.gitignore` 忽略，不会提交）：
-
-   ```bash
-   cp src/main/resources/application-local.example.yml src/main/resources/application-local.yml
-   ```
-
-   如需启用 MCP 外部工具（高德地图、图片搜索），再复制 MCP 配置模板并填入本地 Key：
-
-   ```bash
-   cp src/main/resources/mcp-servers.example.json src/main/resources/mcp-servers.json
-   ```
-
-   > 上述两个本地文件（`application-local.yml`、`mcp-servers.json`）仅存在于本机，同时被 `.dockerignore` 排除，不会进入镜像或提交到仓库。
-
-3. 启动前端（端口 5173，`/api` 自动代理到 8123）：
-
-   ```bash
-   cd chen-ai-agent-frontend
-   npm install
-   npm run dev
-   ```
-
-4. 访问：
-
-   - 前端：http://localhost:5173
-   - 接口文档：http://localhost:8123/api/swagger-ui.html
-   - 健康检查：http://localhost:8123/api/actuator/health
-
-### 方式二：Docker Compose 一键启动（PostgreSQL + Redis + Chroma + 前后端）
+### 1. 准备后端配置
 
 ```bash
-cp .env.example .env
-# 编辑 .env，填入 AI_DASHSCOPE_API_KEY，并修改 POSTGRES_PASSWORD
-docker compose up -d --build
+# 复制本地配置模板（application-local.yml 已被 .gitignore 忽略）
+cp src/main/resources/application-local.example.yml src/main/resources/application-local.yml
 ```
 
-启动后前端：http://localhost:5173 ，后端：http://localhost:8123/api 。
+在 `application-local.yml` 中填入 Key，或直接设置环境变量（推荐，不用改文件）：
 
-数据持久化在宿主机 `./data/` 目录（postgres / redis / chroma / chat-memory / task-memory / artifacts）。
+```bash
+# Windows PowerShell
+$env:AI_DASHSCOPE_API_KEY = "sk-你的DashScope Key"
+# 可选：联网搜索
+$env:SEARCH_API_KEY = "你的 searchapi.io Key"
+```
+
+> 主配置 `application.yml` 中所有密钥均为环境变量占位，未配置时应用使用占位值启动（仅保证冒烟测试可用，真实任务必须配置有效 Key）。
+
+### 2. 启动 Chroma（终端 1）
+
+```bash
+chroma run --host 127.0.0.1 --port 8000 --path ./.chroma
+```
+
+### 3. 启动后端（终端 2，仓库根目录）
+
+```bash
+# Windows
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=local"
+
+# macOS / Linux
+./mvnw spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=local
+```
+
+后端启动后：
+
+- 健康检查：http://127.0.0.1:8123/api/actuator/health
+- 接口文档：http://127.0.0.1:8123/api/swagger-ui.html
+- 数据默认存于 H2 文件库 `./data/chenmanus-db.mv.db`，任务记忆在 `./data/task-memory/`
+
+Windows 也可直接修改并运行 `start-local.cmd`（将其中的 `JAVA_HOME` 改成本机 JDK 21 路径）。
+
+### 4. 启动前端（终端 3）
+
+```bash
+cd chen-ai-agent-frontend
+npm install
+npm run dev
+```
+
+打开 Vite 输出的地址（默认 http://127.0.0.1:5173），进入「工作区」即可创建任务。前端开发服务器会把 `/api` 代理到 `http://localhost:8123`（见 `vite.config.ts` 与前端 `.env`）。
+
+### 可选：启用 MCP 服务
+
+```bash
+cp src/main/resources/mcp-servers.example.json src/main/resources/mcp-servers.json
+# 填入高德 / Pexels Key，并在 application-local.yml 中取消 mcp client 三行注释
+```
+
+### 可选：启用 Redis（分布式锁 / 队列）
+
+```bash
+# docker-compose up -d redis，然后设置
+$env:CHENMANUS_REDIS_ENABLED = "true"
+```
+
+未启用 Redis 时使用单机内存锁与内存队列，适合本地开发。
 
 ---
 
-## 配置项
-
-所有配置均可通过环境变量覆盖，完整列表见 `application.yml`。
+## 主要配置项
 
 | 环境变量 | 默认值 | 说明 |
-|---|---|---|
-| `AI_DASHSCOPE_API_KEY` | 占位值（可零配置启动） | 通义千问 API Key；真实对话 / 嵌入调用必须配置 |
-| `SEARCH_API_KEY` | 空 | 网页搜索工具的 API Key |
-| `API_KEY` | 空 | 旧版 `/api/ai/**` 的 API Key |
-| `DATABASE_URL` | `jdbc:h2:file:./data/chenmanus-db` | 数据库连接（可切 PostgreSQL） |
-| `DATABASE_USERNAME` / `DATABASE_PASSWORD` | `sa` / 空 | 数据库账号 |
-| `REDIS_URL` | `redis://127.0.0.1:6379` | Redis 地址 |
-| `CHENMANUS_REDIS_ENABLED` | `false` | 是否启用 Redis 队列与分布式锁 |
+| --- | --- | --- |
+| `AI_DASHSCOPE_API_KEY` | 占位值 | 通义千问 API Key（真实任务必填） |
+| `SEARCH_API_KEY` | 占位值 | searchapi.io 联网搜索 Key |
+| `DATABASE_URL` | `jdbc:h2:file:./data/chenmanus-db;...` | 数据库连接，生产可换 PostgreSQL |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Redis 地址（需配合 `CHENMANUS_REDIS_ENABLED=true`） |
+| `CHENMANUS_REDIS_ENABLED` | `false` | 是否启用 Redis 锁与队列 |
+| `CHENMANUS_SECURITY_MODE` | `legacy` | 安全模式：`legacy` / `oauth2` |
+| `CHENMANUS_LEGACY_ADMIN_TOKEN` | 空 | legacy 模式下管理接口（DLQ）的 X-Admin-Token |
+| `API_KEY` | 空 | legacy 模式全局 Bearer Token（空则不鉴权） |
+| `CHENMANUS_OIDC_ISSUER_URI` / `CHENMANUS_OIDC_AUDIENCE` | 空 | OAuth2 模式的 OIDC 发行方与受众 |
+| `CHENMANUS_APPROVAL_ENABLED` | `true` | 是否启用高风险操作审批 |
+| `CHENMANUS_APPROVAL_REQUIRED_TYPES` | `DEPLOY,PURCHASE,PAYMENT` | 需要审批的步骤类型 |
+| `CHENMANUS_APPROVAL_REQUIRED_KEYWORDS` | 发布/部署/支付/删除等 | 触发审批的关键词（中英文） |
 | `CHENMANUS_MAX_PARALLEL_STEPS` | `4` | 单任务并行步骤上限 |
 | `CHENMANUS_MAX_ACTIVE_TASKS_PER_TENANT` | `20` | 每租户活跃任务配额 |
-| `CHENMANUS_APPROVAL_ENABLED` | `true` | 是否启用人工审批 |
-| `CHENMANUS_APPROVAL_REQUIRED_TYPES` | `DEPLOY,PURCHASE,PAYMENT` | 强制审批的步骤类型 |
-| `CHENMANUS_APPROVAL_REQUIRED_KEYWORDS` | 发布、部署、删除、购买、支付等 | 强制审批的风险关键词 |
-| `CHENMANUS_SECURITY_MODE` | `legacy` | 安全模式：`legacy` / `oauth2` |
-| `CHENMANUS_OIDC_ISSUER_URI` / `CHENMANUS_OIDC_AUDIENCE` | 空 | OIDC 发行方与受众 |
-| `CHENMANUS_LEGACY_ADMIN_TOKEN` | 空 | legacy 模式管理接口令牌 |
-| `CHENMANUS_ARTIFACT_ALLOWED_ROOT` | `./data` | 产物允许访问的根目录 |
-| `CHENMANUS_INPUT_COST_PER_1K` / `CHENMANUS_OUTPUT_COST_PER_1K` | `0.0` | 每千 token 估算成本 |
+| `CHENMANUS_QUEUE_POLL_MS` | `250` | 队列轮询间隔 |
+| `CHENMANUS_ARTIFACT_ALLOWED_ROOT` | `./data` | 制品允许访问的根目录（防目录穿越） |
 
-MCP 服务在 `src/main/resources/mcp-servers.json` 中配置（可参考 `mcp-servers.example.json`），第三方 Key 通过环境变量注入。该文件含密钥、不入库也不入镜像，仅在本地 profile 中加载：先复制模板，再在 `application-local.yml` 中启用 `spring.ai.mcp.client.stdio.servers-configuration`（见 `application-local.example.yml`）。主配置不写死该路径，因此缺少该文件时应用也能正常启动。
+> 完整配置见 `src/main/resources/application.yml`。
 
 ---
 
-## 前端页面
+## HTTP API 概览
 
-| 路径 | 页面 |
-|---|---|
-| `/` | 重定向到 ChenManus 工作区 |
-| `/workspace` | ChenManus 任务工作区（计划、实时事件、审批、产物） |
-| `/chat/:uuid?` | 原有聊天界面；通过左侧应用导航切换智能助手 / 恋爱大师 |
-
----
-
-## HTTP API
-
-所有接口统一前缀 `/api`，响应统一为 `ApiResponse` 结构。
-
-### ChenManus 任务接口
+所有接口前缀为 `/api`，统一返回 `{ code, message, data, time }`。
 
 | 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/tasks` | 创建任务并入队（body：`prompt`、`tenantId`、`userId`、`sessionId`、`priority`） |
-| GET | `/tasks` | 按 tenant / user / session 查询任务 |
-| GET | `/tasks/quota` | 查询租户配额（管理员） |
-| GET | `/tasks/{taskId}` | 任务详情（含步骤、产物、审查结果） |
-| POST | `/tasks/{taskId}/pause` | 暂停 |
-| POST | `/tasks/{taskId}/resume` | 恢复 |
-| POST | `/tasks/{taskId}/approve` | 批准待审批步骤（body：`note`） |
-| POST | `/tasks/{taskId}/reject` | 驳回待审批步骤 |
-| POST | `/tasks/{taskId}/cancel` | 取消 |
-| GET | `/tasks/{taskId}/events` | SSE 实时事件流（连接时回放最近 200 条） |
-| GET | `/tasks/{taskId}/events/history` | 审计历史，可按 `from` / `to` / `types` / `stepId` / `limit` 过滤 |
-| GET | `/tasks/{taskId}/artifacts/{artifactId}/download` | 下载产物 |
-| GET | `/tasks/{taskId}/artifacts/{artifactId}/preview` | 预览 PDF / 图片 / 文本 |
-| GET | `/tasks/admin/dlq` | 查看死信队列（管理员） |
+| --- | --- | --- |
+| POST | `/tasks` | 创建任务（prompt、tenantId、userId、sessionId、priority） |
+| GET | `/tasks` | 查询任务列表（按身份范围过滤） |
+| GET | `/tasks/quota` | 查询当前租户配额与活跃任务数 |
+| GET | `/tasks/{taskId}` | 任务详情（含步骤、指标） |
+| POST | `/tasks/{taskId}/pause` / `/resume` / `/cancel` | 暂停 / 恢复 / 取消 |
+| POST | `/tasks/{taskId}/approve` / `/reject` | 高风险步骤批准 / 驳回 |
+| GET | `/tasks/{taskId}/events` | SSE 实时事件流（`text/event-stream`） |
+| GET | `/tasks/{taskId}/events/history` | 历史事件（断线重放） |
+| GET | `/tasks/{taskId}/artifacts/{artifactId}/download` | 下载制品 |
+| GET | `/tasks/{taskId}/artifacts/{artifactId}/preview` | 预览制品 |
+| GET | `/tasks/admin/dlq` | 死信队列列表（管理员） |
 | POST | `/tasks/admin/dlq/replay` | 重放死信任务（管理员） |
 
-创建任务示例：
+---
+
+## 测试
 
 ```bash
-curl -X POST http://localhost:8123/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"调研 Spring AI 2.0 的 MCP 用法并输出一份 PDF 报告","priority":"NORMAL"}'
+# 全部单元测试（自动排除需要真实 LLM 的 ChenManusTest）
+.\mvnw.cmd test "-Dtest=!ChenManusTest"
+
+# 前端类型检查与构建
+cd chen-ai-agent-frontend
+npm run type-check
+npm run build
 ```
 
-### AI / LoveApp 接口（保留）
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/ai/chat` | 通用对话 |
-| GET | `/ai/manus/chat` | 原版 ReAct Agent 对话（SSE） |
-| GET | `/ai/love/chat` | 恋爱专家对话 |
-| GET | `/ai/love/chat/sse` | 恋爱专家对话（SSE 流式） |
-| POST | `/ai/love/report` | 生成结构化恋爱报告 |
-| GET | `/ai/love/rag` | RAG 知识库问答 |
-| GET | `/ai/love/tools` | 查看内置工具 |
-| GET | `/ai/love/mcp` | 查看已加载的 MCP 工具 |
+`ChenManusTest` 是真实调用大模型的集成测试（local profile），需要有效 Key，默认不纳入常规测试。
 
 ---
 
-## 内置工具
+## Docker 部署
 
-通过 `ToolRegistration` 注册 7 个工具，ChenManus 子 Agent 与 LoveApp 均可调用：
+- `docker-compose up -d`：启动 PostgreSQL、Redis、Chroma、后端与前端（生产构建）。
+- 仅后端：`docker build -t chen-ai-agent .`
+- 仅前端：`docker build -f Dockerfile.frontend -t chen-ai-agent-frontend ./chen-ai-agent-frontend`
+- 生产环境使用 `--spring.profiles.active=oauth2` 并配置 OIDC 发行方、受众与 `CHENMANUS_LEGACY_ADMIN_TOKEN`。
 
-| 工具 | 能力 |
-|---|---|
-| `WebSearchTool` | 网页搜索（需配置 `SEARCH_API_KEY`） |
-| `WebScrapingTool` | 抓取并解析网页内容（Jsoup） |
-| `FileOperationTool` | 受控文件读写 |
-| `ResourceDownloadTool` | 下载网络资源到本地 |
-| `TerminalOperationTool` | 终端命令执行（命令白名单，安全拦截） |
-| `PDFGenerationTool` | 生成 PDF（iText，支持中文字体） |
-| `TerminateTool` | 主动结束当前任务循环 |
-
----
-
-## MCP 外部工具
-
-通过 Spring AI MCP Client 以声明式方式接入外部服务（配置项为 `spring.ai.mcp.client.stdio.servers-configuration`，仅在本地 profile 中指向 `mcp-servers.json`）：
-
-- **高德地图**（`@amap/amap-maps-mcp-server`）：地理编码、POI、路线规划等。
-- **Pexels 图片搜索**（`chen-image-search-mcp-server` 子模块）：按关键词检索图片。该子模块是独立 Maven 工程，不在主工程 `modules` 中，启用前需先单独打包：在项目根目录执行 `cd chen-image-search-mcp-server; ..\mvnw.cmd package`（Windows）或 `cd chen-image-search-mcp-server && ../mvnw package`（Linux/macOS）。
-
-MCP 工具与内置工具统一注册，Agent 可在同一次推理中混合调用。注意：未配置 `mcp-servers.json` 时不会启动任何 stdio 服务，应用其余功能不受影响。
-
-> **Windows 注意**：Java 的 `ProcessBuilder` 无法直接执行 `npx.cmd`，Windows 上需把高德服务的 `command` 改为 `"cmd"`、`args` 改为 `["/c", "npx", "-y", "@amap/amap-maps-mcp-server"]`（模板默认的 `npx` 适用于 Linux / macOS / Docker）。图片搜索 MCP 服务的启动参数已显式关闭 banner 与 Web 容器、并把日志重定向到 stderr，避免污染 JSON-RPC 的 stdout。
-
----
-
-## 人工审批与审计
-
-- **审批策略**：Planner 输出的 `requiresApproval` 与服务端策略合并；服务端按步骤类型（`DEPLOY/PURCHASE/PAYMENT`）与风险关键词（中英文）强制要求人工确认。
-- **审批流程**：审批前步骤保持 `PENDING`、任务进入 `WAITING_USER`；批准在同一事务内将步骤置为 `APPROVED`、任务置为 `QUEUED`；驳回则置为 `REJECTED`、任务置为 `CANCELLED`。
-- **事务语义**：批准后的重新入队在事务提交后（`afterCompletion`）执行；事务回滚不入队，且内存状态自动从数据库重载。
-- **并发防护**：审批状态转移使用条件更新（CAS），仅当数据库中任务仍为 `WAITING_USER` 时生效；并发双审或审批 / 取消交错时，后到方失败回滚（HTTP 409）。
-- **审计历史**：全部 26 类事件强制持久化，写入失败即回滚；审批事件 message 含 `actor=<user>`；过滤条件在数据库侧先于 `LIMIT` 执行；事件按 `created_at + seq` 双键排序，同毫秒保持插入顺序；审计事件外键为 `RESTRICT`，删除任务不会抹掉审计轨迹。
+生产建议：关闭 Swagger（`springdoc.api-docs.enabled=false`）、启用 HTTPS、配置外部 PostgreSQL 与 Redis、通过环境变量注入所有密钥。
 
 ---
 
 ## 安全与多租户
 
-- **legacy 模式（默认）**：接口整体放行；管理接口（`/tasks/admin/**`、`/tasks/quota`）默认关闭，需配置 `CHENMANUS_LEGACY_ADMIN_TOKEN` 后通过 `X-Admin-Token` 访问（常量时间比较）；未验证身份的审批 actor 标记为 `legacy:<user>`，不会冒充已认证主体。
-- **oauth2 模式**（`CHENMANUS_SECURITY_MODE=oauth2`）：校验 OIDC JWT，`sub`/`user_id` 提供用户身份，`tenant_id`/`tenant` 提供租户身份（缺失则拒绝），`roles`/`realm_access.roles`/`permissions` 映射为角色。
-  - `TENANT_ADMIN`：管理本租户任务、执行审批；
-  - `PLATFORM_ADMIN`：跨租户访问与管理；
-  - 普通用户：只能访问自己的任务。
-- **可信网关模式**：`CHENMANUS_TRUST_IDENTITY_HEADERS` / `CHENMANUS_REQUIRE_IDENTITY_HEADERS` 控制是否信任网关注入的身份头。
-- **产物安全**：Artifact 接口只允许读取 `CHENMANUS_ARTIFACT_ALLOWED_ROOT` 下的真实文件（校验 real path），禁止外部 URL、路径穿越与软链接逃逸。
+- 每个请求携带 `tenantId` / `userId` / `sessionId`（`X-Tenant-Id` 等请求头或查询参数），任务、事件、制品均按身份隔离。
+- **legacy 模式**：可选全局 Bearer Token（`API_KEY`）；管理接口需 `X-Admin-Token`（`CHENMANUS_LEGACY_ADMIN_TOKEN`）。
+- **oauth2 模式**：Spring Security 资源服务器校验 JWT，按角色限制管理接口。
+- 制品访问限制在 `CHENMANUS_ARTIFACT_ALLOWED_ROOT` 内，防止路径穿越。
+- 终端执行、发布、购买、支付等动作受审批策略约束，必须人工确认。
 
 ---
 
-## CI
+## 开源协议
 
-GitHub Actions（`.github/workflows/ci.yml`）在 `master` 与 `feature/**` 分支推送、以及针对 `master` 的 PR 上运行：
-
-- **后端**：`./mvnw -q -DskipTests package` 编译打包；离线单元测试覆盖持久化、配额、队列 / DLQ、指标、产物、角色路由、身份与租户隔离、审批策略、任务管理、分布式锁等。
-- **前端**：`npm ci && npm run build`。
-
-依赖真实大模型 / 第三方 API 的集成测试不作为默认离线门槛。
-
----
-
-## 兼容性说明
-
-- 旧版 `/api/ai/**` 接口与 `/manus` 页面继续保留，新版 `/api/tasks` 与 `/chenmanus` 提供任务化运行时。
-- `schema.sql` 使用 `CREATE TABLE IF NOT EXISTS` 与幂等 `ALTER TABLE`，老库可平滑升级。
-
----
-
-## License
-
-[MIT](LICENSE)
+[MIT](LICENSE)。本项目免费开源，没有任何形式的付费行为。

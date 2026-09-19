@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -59,6 +60,16 @@ public class GlobalExceptionHandler {
     public ApiResponse<?> handleIllegalState(IllegalStateException e) {
         log.warn("Agent 状态异常: {}", e.getMessage());
         return ApiResponse.error(40900, "操作冲突：" + e.getMessage());
+    }
+
+    /**
+     * 客户端已断开（如关闭 SSE 连接 / 浏览器跳转），响应无法写回，属于正常现象，
+     * 不应当作系统异常打印 ERROR 堆栈；连接已失效，无需也无法返回响应体。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ApiResponse<?> handleAsyncRequestNotUsable(AsyncRequestNotUsableException e) {
+        log.debug("客户端连接已断开，响应未发送: {}", e.getMessage());
+        return null;
     }
 
     @ExceptionHandler(Exception.class)
