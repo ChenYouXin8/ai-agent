@@ -24,7 +24,6 @@ import {
 import { SvgIcon } from '@/components/common'
 import { useAppStore, useChatStore } from '@/store'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
-import type { CSSProperties } from 'vue'
 import SiderFooter from '@/views/chat/layout/sider/Footer.vue'
 
 const message = useMessage()
@@ -380,7 +379,7 @@ onBeforeUnmount(() => eventSource?.close())
         collapse-mode="transform"
         position="absolute"
         bordered
-        :style="({ position: isMobile ? 'fixed' : 'absolute', zIndex: 50 } as CSSProperties)"
+        :style="{ position: isMobile ? 'fixed' : 'absolute', zIndex: 50 }"
         content-class="!bg-[#f7f7f8] dark:!bg-[#17171c]"
         @update-collapsed="handleUpdateCollapsed"
       >
