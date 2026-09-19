@@ -267,10 +267,9 @@ MCP 服务在 `src/main/resources/mcp-servers.json` 中配置（可参考 `mcp-s
 
 | 路径 | 页面 |
 |---|---|
-| `/` | 应用中心（Home） |
-| `/love` | 恋爱心理助手 |
-| `/manus` | 原版 ReAct Agent 对话 |
-| `/chenmanus` | ChenManus 任务工作区（计划、实时事件、审批、产物） |
+| `/` | 重定向到 ChenManus 工作区 |
+| `/workspace` | ChenManus 任务工作区（计划、实时事件、审批、产物） |
+| `/chat/:uuid?` | 原有聊天界面；通过左侧应用导航切换智能助手 / 恋爱大师 |
 
 ---
 
