@@ -58,7 +58,11 @@ public class TaskQueueWorker {
             return;
         }
 
-        if (!lockService.tryLock(taskId, Duration.ofMinutes(15))) return;
+        if (!lockService.tryLock(taskId, Duration.ofMinutes(15))) {
+            // queue.poll() 已经取走元素；抢锁失败时必须放回，否则锁竞争/Redis 短暂异常会让任务失去后续执行机会
+            queue.enqueue(taskId, task.getPriority());
+            return;
+        }
         try {
             runtime.runNow(taskId);
             ChenTask finished = taskManager.get(taskId);
