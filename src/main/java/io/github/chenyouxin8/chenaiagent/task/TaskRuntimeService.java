@@ -324,9 +324,11 @@ public class TaskRuntimeService {
     }
 
     private void runStep(ChenTask task, TaskStep step) {
-        step.setStatus(StepStatus.RUNNING);
-        step.setStartedAt(System.currentTimeMillis());
-        taskManager.save(task);
+        synchronized (task) {
+            step.setStatus(StepStatus.RUNNING);
+            step.setStartedAt(System.currentTimeMillis());
+            taskManager.save(task);
+        }
 
         AgentAssignment assignment = teamPlannerService.assign(step);
         handoffService.publish(task, step, assignment, taskManager);
@@ -350,31 +352,37 @@ public class TaskRuntimeService {
             String output = agent.run(prompt);
             if (output == null || output.isBlank()) throw new IllegalStateException("Agent 未返回有效结果");
 
-            metricsService.recordStep(task, step, prompt, output);
-            step.setOutput(output);
-            step.setStatus(StepStatus.COMPLETED);
-            step.setError(null);
-            step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
-            synchronized (task) { artifactService.capture(task, output, taskManager); }
-            taskManager.save(task);
+            synchronized (task) {
+                metricsService.recordStep(task, step, prompt, output);
+                step.setOutput(output);
+                step.setStatus(StepStatus.COMPLETED);
+                step.setError(null);
+                step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
+                artifactService.capture(task, output, taskManager);
+                taskManager.save(task);
+            }
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_COMPLETED,
                     step.getStepId(), output));
         } catch (Exception e) {
-            step.setError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
-            step.setStatus(StepStatus.FAILED);
-            step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
-            taskManager.save(task);
+            synchronized (task) {
+                step.setError(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+                step.setStatus(StepStatus.FAILED);
+                step.setDurationMs(Math.max(0L, System.currentTimeMillis() - step.getStartedAt()));
+                taskManager.save(task);
+            }
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.STEP_FAILED,
                     step.getStepId(), step.getError()));
             throw e;
         } finally {
-            if (agent != null) {
-                metricsService.recordActualUsage(task, step,
-                        agent.getActualInputTokens(), agent.getActualOutputTokens(), agent.getModelCallCount());
+            synchronized (task) {
+                if (agent != null) {
+                    metricsService.recordActualUsage(task, step,
+                            agent.getActualInputTokens(), agent.getActualOutputTokens(), agent.getModelCallCount());
+                }
+                step.setCompletedAt(System.currentTimeMillis());
+                task.touch();
+                taskManager.save(task);
             }
-            step.setCompletedAt(System.currentTimeMillis());
-            task.touch();
-            taskManager.save(task);
             taskManager.publish(new TaskEvent(task.getTaskId(), TaskEventType.METRICS_UPDATED,
                     step.getStepId(), formatStepMetrics(step)));
         }
