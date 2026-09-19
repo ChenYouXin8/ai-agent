@@ -66,7 +66,7 @@ const suggestions = [
 ]
 
 const EVENT_NAMES = [
-  'task_created', 'task_queued', 'plan_created', 'step_planned', 'step_started',
+  'task_created', 'task_queued', 'message', 'plan_created', 'step_planned', 'step_started',
   'step_retry', 'step_completed', 'step_failed', 'agent_handoff',
   'tool_started', 'tool_completed', 'tool_failed', 'metrics_updated', 'artifact_created',
   'review_started', 'review_completed', 'task_approval_required', 'task_approval_granted',
@@ -106,7 +106,7 @@ const visibleEvents = computed(() => {
   if (filter === 'ALL')
     return events.value
   const groups: Record<Exclude<EventFilter, 'ALL'>, string[]> = {
-    TASK: ['task_created', 'task_queued', 'task_paused', 'task_resumed', 'task_cancelled', 'task_completed', 'task_failed', 'task_dead_lettered'],
+    TASK: ['task_created', 'task_queued', 'task_paused', 'task_resumed', 'task_cancelled', 'task_completed', 'task_failed', 'task_dead_lettered', 'message'],
     STEP: ['plan_created', 'step_planned', 'step_started', 'step_retry', 'step_completed', 'step_failed'],
     AGENT: ['agent_handoff', 'tool_started', 'tool_completed', 'tool_failed'],
     REVIEW: ['review_started', 'review_completed', 'task_approval_required', 'task_approval_granted', 'task_approval_rejected'],
@@ -346,7 +346,7 @@ function stepIcon(step: any) {
 
 function eventLabel(type: string) {
   const map: Record<string, string> = {
-    task_created: 'TASK', task_queued: 'QUEUE', plan_created: 'PLAN', step_planned: 'PLAN STEP',
+    task_created: 'TASK', task_queued: 'QUEUE', message: 'INFO', plan_created: 'PLAN', step_planned: 'PLAN STEP',
     step_started: 'STEP', step_retry: 'RETRY', step_completed: 'STEP OK', step_failed: 'STEP ERROR',
     agent_handoff: 'HANDOFF', tool_started: 'TOOL START', tool_completed: 'TOOL OK', tool_failed: 'TOOL ERROR',
     metrics_updated: 'METRICS', artifact_created: 'ARTIFACT', review_started: 'REVIEW',
