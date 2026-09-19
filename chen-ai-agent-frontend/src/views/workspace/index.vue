@@ -85,6 +85,9 @@ const EVENT_FILTERS = [
 
 type EventFilter = typeof EVENT_FILTERS[number]['value']
 
+// NSelect 的 options 需要可变数组，这里从只读常量派生一份可变副本
+const EVENT_FILTER_OPTIONS = EVENT_FILTERS.map((f) => ({ label: f.label, value: f.value }))
+
 const collapsed = computed(() => appStore.siderCollapsed)
 const pendingApproval = computed(() => !!current.value && current.value.status === 'WAITING_USER' && hasPendingApproval(current.value))
 const steps = computed(() => current.value?.steps ?? [])
@@ -752,7 +755,7 @@ onBeforeUnmount(() => {
                               v-model:value="eventFilter"
                               size="tiny"
                               class="!w-28 sm:!w-32"
-                              :options="EVENT_FILTERS"
+                              :options="EVENT_FILTER_OPTIONS"
                             />
                           </div>
                         </div>
