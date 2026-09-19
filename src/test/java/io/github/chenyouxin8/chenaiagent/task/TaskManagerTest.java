@@ -97,7 +97,7 @@ class TaskManagerTest {
     void reloadEvictsStaleAggregateWhenRepositoryFails() {
         TaskRepository repository = mock(TaskRepository.class);
         ChenTask task = new ChenTask("task_reload_failure", "回滚重载");
-        when(repository.find("task_reload_failure")).thenReturn(task);
+        when(repository.findAll()).thenReturn(List.of(task));
         TaskManager manager = new TaskManager(repository);
         manager.restore();
 
