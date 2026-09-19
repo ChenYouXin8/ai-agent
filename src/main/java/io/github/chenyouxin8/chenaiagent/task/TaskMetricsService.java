@@ -35,26 +35,32 @@ public class TaskMetricsService {
     public void recordStep(ChenTask task, TaskStep step, String prompt, String output) {
         long inputTokens = estimateTokens(prompt);
         long outputTokens = estimateTokens(output);
-        step.setEstimatedInputTokens(step.getEstimatedInputTokens() + inputTokens);
-        step.setEstimatedOutputTokens(step.getEstimatedOutputTokens() + outputTokens);
-        task.setEstimatedInputTokens(task.getEstimatedInputTokens() + inputTokens);
-        task.setEstimatedOutputTokens(task.getEstimatedOutputTokens() + outputTokens);
+        synchronized (task) {
+            step.setEstimatedInputTokens(step.getEstimatedInputTokens() + inputTokens);
+            step.setEstimatedOutputTokens(step.getEstimatedOutputTokens() + outputTokens);
+            task.setEstimatedInputTokens(task.getEstimatedInputTokens() + inputTokens);
+            task.setEstimatedOutputTokens(task.getEstimatedOutputTokens() + outputTokens);
+        }
     }
 
     public void recordActualUsage(ChenTask task, TaskStep step, long inputTokens, long outputTokens, long modelCalls) {
         long safeInput = Math.max(0L, inputTokens);
         long safeOutput = Math.max(0L, outputTokens);
         long safeCalls = Math.max(0L, modelCalls);
-        step.setActualInputTokens(step.getActualInputTokens() + safeInput);
-        step.setActualOutputTokens(step.getActualOutputTokens() + safeOutput);
-        step.setModelCallCount(step.getModelCallCount() + safeCalls);
-        recordActualUsage(task, safeInput, safeOutput, safeCalls);
+        synchronized (task) {
+            step.setActualInputTokens(step.getActualInputTokens() + safeInput);
+            step.setActualOutputTokens(step.getActualOutputTokens() + safeOutput);
+            step.setModelCallCount(step.getModelCallCount() + safeCalls);
+            recordActualUsage(task, safeInput, safeOutput, safeCalls);
+        }
     }
 
     public void recordActualUsage(ChenTask task, long inputTokens, long outputTokens, long modelCalls) {
-        task.setActualInputTokens(task.getActualInputTokens() + Math.max(0L, inputTokens));
-        task.setActualOutputTokens(task.getActualOutputTokens() + Math.max(0L, outputTokens));
-        task.setModelCallCount(task.getModelCallCount() + Math.max(0L, modelCalls));
+        synchronized (task) {
+            task.setActualInputTokens(task.getActualInputTokens() + Math.max(0L, inputTokens));
+            task.setActualOutputTokens(task.getActualOutputTokens() + Math.max(0L, outputTokens));
+            task.setModelCallCount(task.getModelCallCount() + Math.max(0L, modelCalls));
+        }
     }
 
     public long estimateTokens(String text) {
